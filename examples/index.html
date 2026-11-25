@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sim-lab examples</title>
+<style>
+  :root { --bg: #ECF0F4; --card: #fff; --ink: #14202F; --muted: #56657A; --line: #D3DBE5; --accent: #1B5FD9; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0D131D; --card: #151D2A; --ink: #E4EAF3; --muted: #9AA8BC; --line: #2A3649; --accent: #7EA8FF; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px; }
+  h1 { margin: 0 0 6px; font-size: 1.8rem; }
+  p { color: var(--muted); margin: 0 0 24px; }
+  p a { color: var(--accent); }
+  a.card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; color: var(--ink); text-decoration: none; }
+  a.card:hover { border-color: var(--accent); }
+  a.card b { display: block; font-size: 1.05rem; }
+  a.card span { color: var(--muted); font-size: .92rem; }
+</style>
+<main>
+  <h1>sim-lab examples</h1>
+  <p>Interactive "how it works" pages built by the <a href="https://github.com/GokulKGit/sim-lab">sim-lab</a> Claude Code plugin.</p>
+  <a class="card" href="websocket.html"><b>WebSocket · quick</b><span>Handshake, frames, Ping/Pong, idle timeouts, closing, reconnecting.</span></a>
+  <a class="card" href="websocket-full.html"><b>WebSocket · full</b><span>The same, plus a simulator: change timeouts and reconnect strategy, restart the server, pull the cable.</span></a>
+  <a class="card" href="mcp.html"><b>Model Context Protocol (MCP) · quick</b><span>Host, clients and servers; tools/list, consent, tools/call; common mistakes.</span></a>
+</main>
+</html>

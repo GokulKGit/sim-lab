@@ -1,0 +1,1585 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8">
+<title>WebSocket · how it works</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* sim-lab styles. One topic page = header + tabs (Overview, Tour, Simulate, Check).
+   Tour and Simulate put a diagram stage on the left and a control panel on the right.
+   Node colours for topic files: var(--c-blue|green|orange|purple|teal|pink|amber|gray). */
+:root{
+  --bg:#ECF0F4; --surface:#FFFFFF; --surface-2:#F4F6F9; --ink:#14202F; --muted:#56657A; --line:#D3DBE5; --grid:#DCE3EC;
+  --accent:#1B5FD9; --accent-ink:#FFFFFF; --accent-soft:#E2EBFC;
+  --ok:#137A3A; --ok-soft:#DFF2E6; --warn:#9A5800; --warn-soft:#FBEED7; --bad:#BF2F28; --bad-soft:#FBE3E1; --evt:#7238BE; --evt-soft:#EEE5FA;
+  --code-bg:#0F1726; --code-ink:#D8E2F0; --code-muted:#7D8DA6; --code-ok:#7FD69B; --code-bad:#FF8A80; --code-acc:#8DB4FF; --code-warn:#F5C26B;
+  --c-blue:#1A6FE0; --c-green:#188038; --c-orange:#C8530A; --c-purple:#8430A8; --c-teal:#0A8282; --c-pink:#BC1F5C; --c-amber:#A87C00; --c-gray:#5F6B7A;
+  --display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif; --body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:12px; --shadow:0 1px 2px rgba(20,32,47,.06),0 4px 14px rgba(20,32,47,.06);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131D; --surface:#151D2A; --surface-2:#1B2535; --ink:#E4EAF3; --muted:#9AA8BC; --line:#2A3649; --grid:#1C2635;
+  --accent:#7EA8FF; --accent-ink:#0D131D; --accent-soft:#1D2C4A;
+  --ok:#6FD394; --ok-soft:#163324; --warn:#F2B65C; --warn-soft:#3A2C14; --bad:#FF8B82; --bad-soft:#3D1D1C; --evt:#C3A0FF; --evt-soft:#2C2142;
+  --code-bg:#080D16;
+  --c-blue:#6FA6FF; --c-green:#4CC27A; --c-orange:#F08A4B; --c-purple:#C17BE3; --c-teal:#3CC2C2; --c-pink:#F06496; --c-amber:#E3B93C; --c-gray:#A2ADBB;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131D; --surface:#151D2A; --surface-2:#1B2535; --ink:#E4EAF3; --muted:#9AA8BC; --line:#2A3649; --grid:#1C2635;
+  --accent:#7EA8FF; --accent-ink:#0D131D; --accent-soft:#1D2C4A;
+  --ok:#6FD394; --ok-soft:#163324; --warn:#F2B65C; --warn-soft:#3A2C14; --bad:#FF8B82; --bad-soft:#3D1D1C; --evt:#C3A0FF; --evt-soft:#2C2142;
+  --code-bg:#080D16;
+  --c-blue:#6FA6FF; --c-green:#4CC27A; --c-orange:#F08A4B; --c-purple:#C17BE3; --c-teal:#3CC2C2; --c-pink:#F06496; --c-amber:#E3B93C; --c-gray:#A2ADBB;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+h1,h2,h3,h4{font-family:var(--display);line-height:1.2;text-wrap:balance;margin:0}
+p{margin:0}
+a{color:var(--accent)}
+code,kbd{font-family:var(--mono);font-size:.86em}
+p code,li code,td code,span code{background:var(--surface-2);border:1px solid var(--line);border-radius:5px;padding:0 4px;overflow-wrap:anywhere}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1280px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* Top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:14px;padding-block:10px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink)}
+.brand b{font-family:var(--display);font-size:1.15rem;letter-spacing:-.01em}
+.brand small{display:block;font-size:.72rem;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.top .spacer{flex:1}
+.top-prog{font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+.bar{width:110px;height:6px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+
+main{padding-block:22px 60px}
+
+/* Hex glyph (service icon) */
+.hex{--c:var(--accent);width:46px;height:50px;flex:none;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700;font-size:.78rem;letter-spacing:.02em;
+  background:var(--c);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.hex.sm{width:34px;height:37px;font-size:.64rem}
+.hex.lg{width:64px;height:70px;font-size:1rem}
+.hex.ghost{background:transparent;color:var(--muted);box-shadow:none;position:relative}
+.hex.ghost::before{content:"";position:absolute;inset:0;background:var(--line);clip-path:inherit}
+.hex.ghost::after{content:"";position:absolute;inset:2px;background:var(--surface);clip-path:inherit}
+.hex.ghost span{position:relative;z-index:1}
+[data-theme="dark"] .hex:not(.ghost){color:#0D131D}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .hex:not(.ghost){color:#0D131D}}
+
+/* Chips */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.chip.on{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.chip.acc{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.chip.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.chip.evt{background:var(--evt-soft);color:var(--evt);border-color:transparent}
+
+/* Topic header */
+.svc-head{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.svc-head .t{min-width:0;flex:1}
+.svc-head h1{font-size:clamp(1.5rem,3vw,2.1rem);letter-spacing:-.02em}
+.svc-head p{color:var(--muted);margin-top:4px;max-width:70ch}
+.svc-head .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow-x:auto;scrollbar-width:none}
+.tabs button{border:0;background:none;padding:10px 14px;font-weight:600;font-size:.9rem;color:var(--muted);border-bottom:2.5px solid transparent;cursor:pointer;white-space:nowrap;display:flex;gap:7px;align-items:center}
+.tabs button[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.tabs button .ok{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.tabs button .ok.d{background:var(--ok)}
+
+/* Panels and cards */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h3{font-size:1rem;margin-bottom:8px}
+.lbl{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.ov-hero{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;margin-bottom:14px}
+.ov-hero .what{font-size:1.06rem}
+.ov-hero .analogy{margin-top:10px;color:var(--muted);font-size:.92rem;border-left:3px solid var(--line);padding-left:10px}
+ul.tick{list-style:none;padding:0;margin:0;display:grid;gap:7px}
+ul.tick li{position:relative;padding-left:22px;font-size:.92rem}
+ul.tick li::before{content:"";position:absolute;left:2px;top:.5em;width:10px;height:10px;border-radius:3px;background:var(--ok)}
+ul.tick.no li::before{background:var(--bad);border-radius:50%}
+ul.tick.sig li::before{background:var(--accent);clip-path:polygon(0 0,100% 50%,0 100%);border-radius:0}
+.terms{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:8px}
+.term{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--surface-2);font-size:.86rem;min-width:0}
+.term b{display:block;font-family:var(--display);font-size:.92rem}
+.term span{color:var(--muted);overflow-wrap:anywhere}
+table.kv{width:100%;border-collapse:collapse;font-size:.88rem}
+table.kv td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.kv td:first-child{color:var(--muted);width:44%}
+table.kv td:last-child{font-weight:600}
+.tbl-wrap{overflow-x:auto}
+.conn{display:grid;gap:8px}
+.conn div{display:flex;gap:10px;align-items:center;font-size:.88rem;min-width:0}
+.conn .arrow{color:var(--muted);font-family:var(--mono)}
+.conn .how-txt{color:var(--muted);min-width:0;overflow-wrap:anywhere}
+.note-src{font-size:.78rem;color:var(--muted);margin-top:14px}
+
+/* Stage (Tour + Simulate) */
+.stage-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.stage{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;min-width:0}
+.stage-top{display:flex;gap:8px;flex-wrap:wrap;padding:12px 12px 0}
+.metric{border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-width:88px;background:var(--surface-2)}
+.metric .lbl{font-size:.62rem}
+.metric b{display:block;font-family:var(--mono);font-size:.98rem;font-variant-numeric:tabular-nums}
+.metric.ok b{color:var(--ok)}.metric.warn b{color:var(--warn)}.metric.bad b{color:var(--bad)}.metric.acc b{color:var(--accent)}
+.scene-box{overflow-x:auto;padding:4px 6px}
+.scene-svg{display:block;width:100%;min-width:600px;height:auto;font-family:var(--body)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;padding:0 14px 12px;font-size:.76rem;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.side{display:grid;gap:12px;min-width:0}
+.side .card{padding:14px}
+.step-k{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.step-title{font-size:1.2rem;margin-bottom:8px}
+.step-body{font-size:.92rem;display:grid;gap:8px}
+.step-body p,.step-body li{overflow-wrap:anywhere}
+.step-body ul{margin:0;padding-left:18px}
+.tip{background:var(--ok-soft);border-radius:10px;padding:10px 12px;font-size:.86rem;margin-top:10px}
+.tip.trap{background:var(--warn-soft)}
+.tip .lbl{display:block;margin-bottom:2px;color:inherit;opacity:.8}
+.nav-row{display:flex;gap:8px;margin-top:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:8px 13px;font-weight:600;font-size:.86rem;cursor:pointer;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);flex:1}
+.btn.sm{padding:5px 9px;font-size:.78rem}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.danger{color:var(--bad)}
+.keys{font-size:.72rem;color:var(--muted);margin-top:8px}
+.keys kbd{border:1px solid var(--line);border-radius:4px;padding:0 4px;background:var(--surface-2)}
+.steps-strip{display:flex;gap:6px;padding:12px 14px;border-top:1px solid var(--line);overflow-x:auto;align-items:center}
+.steps-strip button{flex:none;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:var(--surface);font-family:var(--mono);font-size:.78rem;cursor:pointer;color:var(--muted)}
+.steps-strip button.seen{border-color:var(--ok);color:var(--ok)}
+.steps-strip button.cur{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.steps-strip .now{font-size:.8rem;color:var(--muted);margin-left:6px;white-space:nowrap}
+
+/* Simulate */
+.sim-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.sim-bar .clock{font-family:var(--mono);font-size:.84rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:6px 10px;font-size:.8rem;font-weight:600;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.ctl{display:grid;gap:4px;padding:9px 0;border-bottom:1px solid var(--line)}
+.ctl:last-child{border-bottom:0}
+.ctl label,.ctl .cl{display:flex;justify-content:space-between;gap:8px;font-size:.85rem;font-weight:600}
+.ctl output{font-family:var(--mono);color:var(--accent);font-size:.84rem}
+.ctl small{color:var(--muted);font-size:.76rem;line-height:1.4}
+.ctl input[type=range]{width:100%;accent-color:var(--accent)}
+.ctl select{font:inherit;font-size:.85rem;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.switch{display:flex;align-items:center;gap:8px;cursor:pointer}
+.switch input{accent-color:var(--accent);width:16px;height:16px}
+.ctl-actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:10px}
+.scen{display:grid;gap:6px}
+.scen button{text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:9px 11px;cursor:pointer;font-size:.84rem}
+.scen button b{display:block;font-size:.88rem}
+.scen button span{color:var(--muted)}
+.scen button:hover{border-color:var(--accent)}
+.log{max-height:170px;overflow:auto;padding:8px 14px 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:.76rem;display:grid;gap:3px;align-content:start}
+.log div{display:flex;gap:8px;min-width:0}
+.log time{color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
+.log span{overflow-wrap:anywhere;min-width:0}
+.log .ok{color:var(--ok)}.log .warn{color:var(--warn)}.log .bad{color:var(--bad)}.log .acc{color:var(--accent)}.log .evt{color:var(--evt)}
+.explain{font-size:.86rem;padding:10px 14px;border-top:1px solid var(--line);background:var(--surface-2);display:flex;gap:10px;align-items:flex-start}
+.explain b{flex:none}
+
+/* Terminal */
+.term-box{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r);font-family:var(--mono);font-size:.78rem;overflow:hidden;border:1px solid var(--line)}
+.term-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.08);color:var(--code-muted);font-size:.72rem}
+.term-head i{width:9px;height:9px;border-radius:50%;background:#3A4559;display:inline-block}
+.term-out{height:230px;overflow:auto;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}
+.term-out .p{color:var(--code-acc)}.term-out .ok{color:var(--code-ok)}.term-out .bad{color:var(--code-bad)}.term-out .mut{color:var(--code-muted)}.term-out .warn{color:var(--code-warn)}
+.term-in{display:flex;gap:6px;align-items:center;padding:8px 12px;border-top:1px solid rgba(255,255,255,.08)}
+.term-in span{color:var(--code-acc);flex:none}
+.term-in input{flex:1;min-width:0;background:transparent;border:0;color:var(--code-ink);font:inherit;outline:none}
+.cook{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.cook button{font-family:var(--mono);font-size:.7rem;border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:3px 7px;cursor:pointer;color:var(--ink);text-align:left;max-width:100%;overflow-wrap:anywhere}
+.cook button:hover{border-color:var(--accent)}
+
+/* Check */
+.quiz{display:grid;gap:12px}
+.q{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.q p{font-weight:600;margin-bottom:10px;overflow-wrap:anywhere}
+.opts{display:grid;gap:6px}
+.opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:8px 10px;cursor:pointer;background:var(--surface-2);text-align:left;font-size:.9rem;width:100%}
+.opt b{font-family:var(--mono);color:var(--muted);flex:none}
+.opt span{min-width:0;overflow-wrap:anywhere}
+.opt.right{border-color:var(--ok);background:var(--ok-soft)}
+.opt.wrong{border-color:var(--bad);background:var(--bad-soft)}
+.why{margin-top:8px;font-size:.86rem;color:var(--muted)}
+.score{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.score b{font-family:var(--display);font-size:1.6rem}
+.learn{display:grid;gap:6px}
+.learn label{display:flex;gap:9px;align-items:flex-start;font-size:.9rem;cursor:pointer}
+.learn input{accent-color:var(--ok);margin-top:4px;flex:none}
+.check-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+
+footer.foot{font-size:.8rem;color:var(--muted);padding-top:24px;border-top:1px solid var(--line);margin-top:30px;display:grid;gap:14px}
+.foot-row{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
+.sources ol{margin:6px 0 0;padding-left:20px;display:grid;gap:3px}
+.sources li{overflow-wrap:anywhere}
+.theme-btn{border:1px solid var(--line);background:var(--surface-2);border-radius:99px;padding:4px 11px;font-size:.78rem;font-weight:600;cursor:pointer;color:var(--ink)}
+.theme-btn:hover{border-color:var(--accent)}
+
+/* SVG scene */
+.scene-svg .grid-line{stroke:var(--grid);stroke-width:1}
+.scene-svg .bgrect{fill:var(--surface)}
+.scene-svg .grp rect{fill:var(--surface-2);stroke:var(--line);stroke-dasharray:5 4;stroke-width:1.2}
+.scene-svg .grp text{fill:var(--muted);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.scene-svg .grp.acc rect{stroke:var(--accent)}
+.scene-svg .grp.bad rect{stroke:var(--bad);fill:var(--bad-soft)}
+.scene-svg .lk{stroke:var(--line);stroke-width:2;fill:none}
+.scene-svg .lk.dash{stroke-dasharray:6 5}
+.scene-svg .lk.acc{stroke:var(--accent);opacity:.55}
+.scene-svg .lk.bad{stroke:var(--bad);opacity:.7}
+.scene-svg .lk.evt{stroke:var(--evt);opacity:.6}
+.scene-svg .lk-l{fill:var(--muted);font-size:10.5px;font-family:var(--mono)}
+.scene-svg .lk-lb{fill:var(--surface)}
+.scene-svg .nd{transition:transform .55s cubic-bezier(.3,.7,.3,1),opacity .35s}
+.scene-svg .nd .box{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+.scene-svg .nd .ttl{fill:var(--ink);font-size:14px;font-weight:600}
+.scene-svg .nd .sub{fill:var(--muted);font-size:11.5px}
+.scene-svg .nd .hx{fill:var(--nc,var(--accent))}
+.scene-svg .nd .hxt{fill:var(--surface);font-size:9px;font-weight:700;font-family:var(--display)}
+.scene-svg .nd .stripe{fill:var(--line)}
+.scene-svg .nd.unit .ttl{font-size:12px}
+.scene-svg .nd.unit .sub{font-size:10.5px}
+.scene-svg .nd.hl .box{stroke:var(--accent);stroke-width:2.5}
+.scene-svg .nd.dim{opacity:.35}
+.scene-svg .nd.s-cold .box{stroke-dasharray:4 3}
+.scene-svg .nd.s-cold .stripe{fill:var(--line)}
+.scene-svg .nd.s-start .stripe{fill:var(--warn)}
+.scene-svg .nd.s-start .box{stroke:var(--warn)}
+.scene-svg .nd.s-ready .stripe{fill:var(--ok)}
+.scene-svg .nd.s-busy .stripe{fill:var(--accent)}
+.scene-svg .nd.s-busy .box{stroke:var(--accent)}
+.scene-svg .nd.s-down .stripe{fill:var(--bad)}
+.scene-svg .nd.s-down .box{stroke:var(--bad);fill:var(--bad-soft)}
+.scene-svg .nd.s-idle .stripe{fill:var(--muted)}
+.scene-svg .nd.s-evt .stripe{fill:var(--evt)}
+.scene-svg .nd.s-evt .box{stroke:var(--evt)}
+.scene-svg .nd.t-b .stripe{fill:var(--evt)}
+.scene-svg .nd .bdg{fill:var(--accent)}
+.scene-svg .nd .bdgt{fill:var(--accent-ink);font-size:10px;font-weight:700;font-family:var(--mono)}
+.scene-svg .nd.flash .box{animation:flash .7s}
+@keyframes flash{50%{fill:var(--accent-soft)}}
+.scene-svg .nd.s-start .box{animation:pulse 1.1s infinite}
+@keyframes pulse{50%{stroke-opacity:.3}}
+.scene-svg .pk{stroke:var(--surface);stroke-width:1.5}
+.scene-svg .pk.req{fill:var(--accent)}.scene-svg .pk.res{fill:var(--ok)}.scene-svg .pk.evt{fill:var(--evt)}.scene-svg .pk.bad{fill:var(--bad)}.scene-svg .pk.warn{fill:var(--warn)}
+.scene-svg .say rect{fill:var(--ink)}
+.scene-svg .say text{fill:var(--bg);font-size:11px;font-weight:600;font-family:var(--mono)}
+.scene-svg .say.bad rect{fill:var(--bad)}.scene-svg .say.ok rect{fill:var(--ok)}.scene-svg .say.warn rect{fill:var(--warn)}.scene-svg .say.evt rect{fill:var(--evt)}
+.scene-svg .say.bad text,.scene-svg .say.ok text,.scene-svg .say.warn text,.scene-svg .say.evt text{fill:var(--surface)}
+.scene-svg .say{transition:opacity .3s}
+
+@media (prefers-reduced-motion: reduce){.scene-svg .nd{transition:none}.scene-svg .nd.s-start .box,.scene-svg .nd.flash .box{animation:none}}
+
+@media (max-width: 1000px){
+  .stage-grid,.check-grid{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width: 720px){
+  .ov-hero,.grid2,.grid3{grid-template-columns:minmax(0,1fr)}
+  .top-prog .bar{width:70px}
+}
+
+@media (max-width: 720px){ .top{position:static} .metric{min-width:0;flex:1 1 30%} }
+
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">
+      <span class="hex sm" style="--c:var(--accent)">SIM</span>
+      <span><b id="brand-name">sim-lab</b><small>How it works · interactive</small></span>
+    </span>
+    <span class="spacer"></span>
+    <span class="top-prog" id="top-prog"></span>
+    <button class="theme-btn" id="theme" type="button">◐ Auto</button>
+  </div>
+</header>
+<main class="wrap" id="app"></main>
+
+<script>
+/* sim-lab: core registry and helpers. Topic files call SimLab.topic({...}). */
+(function () {
+  'use strict';
+  const L = (window.SimLab = window.SimLab || {});
+
+  /* One topic per page. */
+  L.current = null;
+  L.topic = function (t) {
+    if (!t || !t.id || !t.name) throw new Error('SimLab.topic needs at least id and name');
+    L.current = t;
+  };
+  /* Older lab files used addService; treat it the same. */
+  L.services = {};
+  L.addService = function (s) { L.services[s.id] = s; if (!L.current) L.topic(s); };
+
+  /* Storage: wrapped, because it can be missing or throw. Keys are per topic. */
+  const pre = () => 'simlab_' + (L.current ? L.current.id : 'x') + '_';
+  L.store = {
+    get(k, d) { try { const v = localStorage.getItem(pre() + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(pre() + k, JSON.stringify(v)); } catch (e) { /* ignore */ } }
+  };
+
+  /* Progress: one flag per tab. */
+  L.prog = id => L.store.get('p_' + id, {});
+  L.mark = (id, phase, val) => {
+    const v = val === undefined ? true : val;
+    const p = L.prog(id);
+    if (p[phase] === v) return;
+    p[phase] = v;
+    L.store.set('p_' + id, p);
+    document.dispatchEvent(new CustomEvent('simlab:progress'));
+  };
+
+  /* DOM helper: h('div', {class:'x', onclick:fn}, child, 'text') */
+  L.h = function (tag, props) {
+    const el = document.createElement(tag);
+    if (props) for (const k in props) {
+      const v = props[k];
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k === 'html') el.innerHTML = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k.slice(0, 2) === 'on' && typeof v === 'function') el.addEventListener(k.slice(2), v);
+      else if (k === 'style' && typeof v === 'object') { for (const sk in v) { if (sk.startsWith('--')) el.style.setProperty(sk, v[sk]); else el.style[sk] = v[sk]; } }
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    const kids = Array.prototype.slice.call(arguments, 2).flat(Infinity);
+    kids.forEach(c => { if (c == null || c === false) return; el.append(c.nodeType ? c : document.createTextNode(String(c))); });
+    return el;
+  };
+  L.esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  L.clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  L.rnd = (a, b) => a + Math.random() * (b - a);
+  L.pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  L.hexId = n => Math.random().toString(16).slice(2, 2 + (n || 5));
+
+  /* Command-line parser for the simulated terminal.
+     'docker run -d -p 8080:80 nginx' -> {words:['docker','run','nginx'], flags:{d:true, p:'8080:80'}}
+     Boolean long flags: list them in cli.boolFlags; no-*, allow-* are boolean by default. */
+  L.parseCmd = function (line, boolFlags) {
+    const toks = [];
+    let cur = '', q = null;
+    for (const ch of line.trim()) {
+      if (q) { if (ch === q) q = null; else cur += ch; }
+      else if (ch === '"' || ch === "'") q = ch;
+      else if (/\s/.test(ch)) { if (cur) { toks.push(cur); cur = ''; } }
+      else cur += ch;
+    }
+    if (cur) toks.push(cur);
+    const bools = new Set(['async', 'quiet', 'wait', 'help'].concat(boolFlags || []));
+    const isBool = name => bools.has(name) || /^(no-|allow-)/.test(name);
+    const words = [], flags = {};
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (t.startsWith('--')) {
+        const eq = t.indexOf('=');
+        const name = eq > -1 ? t.slice(2, eq) : t.slice(2);
+        if (eq > -1) flags[name] = t.slice(eq + 1);
+        else if (toks[i + 1] && !toks[i + 1].startsWith('-') && !isBool(name)) flags[name] = toks[++i];
+        else flags[name] = true;
+      } else if (t.startsWith('-') && t.length === 2) {
+        const name = t.slice(1);
+        flags[name] = toks[i + 1] && !toks[i + 1].startsWith('-') && !bools.has(name) ? toks[++i] : true;
+      } else words.push(t);
+    }
+    return { words, flags, raw: line.trim() };
+  };
+
+  /* Fixed-width table for terminal output. rows: array of arrays. */
+  L.table = function (head, rows) {
+    const all = [head].concat(rows).map(r => r.map(c => String(c)));
+    const w = head.map((_, i) => Math.max.apply(null, all.map(r => (r[i] || '').length)));
+    return all.map(r => r.map((c, i) => c.padEnd(w[i])).join('  ').trimEnd()).join('\n');
+  };
+
+  /* Copy a diagram spec and change some nodes: L.spec(base, {db: {state: 'down'}}, {nodes: [...extra], links: [...extra]}).
+     A node set to null is removed. */
+  L.spec = function (base, changes, extra) {
+    changes = changes || {}; extra = extra || {};
+    const nodes = (base.nodes || []).filter(n => changes[n.id] !== null).map(n => Object.assign({}, n, changes[n.id] || {}));
+    const ids = new Set(nodes.map(n => n.id));
+    return {
+      groups: (base.groups || []).concat(extra.groups || []),
+      nodes: nodes.concat(extra.nodes || []),
+      links: (base.links || []).filter(l => ids.has(l.a) && ids.has(l.b)).concat(extra.links || [])
+    };
+  };
+
+  /* Cancellable sleep for tour animations. */
+  L.Cancel = function () {
+    const t = { dead: false };
+    t.sleep = ms => new Promise((res, rej) => setTimeout(() => (t.dead ? rej(L.CANCELLED) : res()), ms));
+    t.stop = () => { t.dead = true; };
+    return t;
+  };
+  L.CANCELLED = { cancelled: true };
+
+  /* Compatibility: lab files written for the GCP Service Lab use window.GCPLab. */
+  window.GCPLab = L;
+})();
+
+/* sim-lab: SVG scene engine.
+   A scene is a set of groups (dashed boxes), nodes (cards) and links (lines).
+   Call scene.set(spec) as often as you like: nodes are matched by id, so they
+   slide to new positions, fade in, or fade out.
+
+   spec = {
+     groups: [{id, x, y, w, h, label, tone}],             // x,y = top-left
+     nodes:  [{id, kind:'svc'|'actor'|'unit'|'store', x, y, label, sub, abbr, color, state, badge, w, h, dim, hl}],
+     links:  [{a, b, label, dash, tone}]                    // a/b = node ids
+   }
+   kind 'svc' and 'store' draw a hexagon icon with abbr (up to 4 letters); 'unit' is a small
+   instance/pod/VM card whose top stripe shows state:
+   cold | start | ready | busy | idle | down | evt
+*/
+(function () {
+  'use strict';
+  const L = window.SimLab;
+  const NS = 'http://www.w3.org/2000/svg';
+  const S = (tag, attrs) => { const e = document.createElementNS(NS, tag); if (attrs) for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]); return e; };
+  const reduceMotion = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
+  const SIZE = { svc: [184, 60], store: [178, 60], actor: [132, 46], unit: [80, 44] };
+  const HEX = r => { const p = []; for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i - Math.PI / 2; p.push((r * Math.cos(a)).toFixed(1) + ',' + (r * Math.sin(a)).toFixed(1)); } return p.join(' '); };
+
+  L.Scene = function (host, opt) {
+    opt = opt || {};
+    const W = opt.w || 820, H = opt.h || 430;
+    const svg = S('svg', { viewBox: `0 0 ${W} ${H}`, class: 'scene-svg', role: 'img', 'aria-label': opt.label || 'Diagram' });
+    const pid = 'grid' + L.hexId(6);
+    const defs = S('defs');
+    const pat = S('pattern', { id: pid, width: 22, height: 22, patternUnits: 'userSpaceOnUse' });
+    pat.append(S('path', { d: 'M22 0H0V22', fill: 'none', class: 'grid-line' }));
+    defs.append(pat);
+    svg.append(defs, S('rect', { width: W, height: H, class: 'bgrect' }), S('rect', { width: W, height: H, fill: `url(#${pid})` }));
+    const gGroups = S('g'), gLinks = S('g'), gPk = S('g'), gNodes = S('g'), gSay = S('g');
+    svg.append(gGroups, gLinks, gPk, gNodes, gSay);
+    host.append(svg);
+
+    const nodes = new Map(), groups = new Map();
+    let speed = 1;
+
+    function buildNode(n) {
+      const g = S('g', { class: 'nd' });
+      const r = { g, n: {}, box: S('rect', { class: 'box' }), stripe: S('rect', { class: 'stripe' }), hx: S('polygon', { class: 'hx', points: HEX(15) }), hxt: S('text', { class: 'hxt', 'text-anchor': 'middle', 'dominant-baseline': 'central' }), ttl: S('text', { class: 'ttl' }), sub: S('text', { class: 'sub' }), bdg: S('g'), person: S('g') };
+      r.bdg.append(S('circle', { class: 'bdg', r: 11 }), S('text', { class: 'bdgt', 'text-anchor': 'middle', 'dominant-baseline': 'central' }));
+      r.person.append(S('circle', { cx: 0, cy: -5, r: 5, class: 'hx' }), S('path', { d: 'M-9 10 a9 8 0 0 1 18 0 z', class: 'hx' }));
+      g.append(r.box, r.stripe, r.hx, r.hxt, r.person, r.ttl, r.sub, r.bdg);
+      g.style.opacity = '0';
+      gNodes.append(g);
+      setTimeout(() => { g.style.opacity = ''; }, 40);
+      return r;
+    }
+
+    function paint(r, n) {
+      const kind = n.kind || 'svc';
+      const sz = SIZE[kind] || SIZE.svc;
+      const w = n.w || sz[0], h = n.h || sz[1];
+      r.w = w; r.h = h; r.x = n.x; r.y = n.y;
+      r.g.style.transform = `translate(${n.x}px, ${n.y}px)`;
+      r.g.setAttribute('class', ['nd', kind, n.state ? 's-' + n.state : '', n.hl ? 'hl' : '', n.dim ? 'dim' : '', n.tone ? 't-' + n.tone : ''].join(' ').trim());
+      if (n.color) r.g.style.setProperty('--nc', n.color); else r.g.style.removeProperty('--nc');
+      const rx = kind === 'actor' ? h / 2 : kind === 'unit' ? 8 : 12;
+      Object.entries({ x: -w / 2, y: -h / 2, width: w, height: h, rx }).forEach(([k, v]) => r.box.setAttribute(k, v));
+      const isUnit = kind === 'unit';
+      r.stripe.style.display = isUnit ? '' : 'none';
+      if (isUnit) Object.entries({ x: -w / 2 + 6, y: -h / 2 + 4, width: w - 12, height: 4, rx: 2 }).forEach(([k, v]) => r.stripe.setAttribute(k, v));
+      const hasHex = kind === 'svc' || kind === 'store';
+      r.hx.style.display = hasHex ? '' : 'none';
+      r.hxt.style.display = hasHex ? '' : 'none';
+      r.person.style.display = kind === 'actor' ? '' : 'none';
+      const iconX = -w / 2 + 24;
+      if (hasHex) { r.hx.setAttribute('transform', `translate(${iconX},0)`); r.hxt.setAttribute('x', iconX); r.hxt.setAttribute('y', 0); r.hxt.textContent = (n.abbr || '').slice(0, 4); }
+      if (kind === 'actor') r.person.setAttribute('transform', `translate(${-w / 2 + 22},0)`);
+      const textX = isUnit ? 0 : -w / 2 + (hasHex ? 46 : 40);
+      const anchor = isUnit ? 'middle' : 'start';
+      r.ttl.setAttribute('text-anchor', anchor); r.sub.setAttribute('text-anchor', anchor);
+      r.ttl.setAttribute('x', textX); r.sub.setAttribute('x', textX);
+      const hasSub = !!n.sub;
+      r.ttl.setAttribute('y', isUnit ? (hasSub ? 0 : 5) : (hasSub ? -3 : 5));
+      r.sub.setAttribute('y', isUnit ? 13 : 13);
+      r.ttl.textContent = n.label || '';
+      r.sub.textContent = n.sub || '';
+      const showB = n.badge != null && n.badge !== '';
+      r.bdg.style.display = showB ? '' : 'none';
+      if (showB) { r.bdg.setAttribute('transform', `translate(${w / 2 - 4},${-h / 2 + 2})`); r.bdg.lastChild.textContent = n.badge; }
+      r.n = n;
+    }
+
+    function setGroups(list) {
+      const keep = new Set();
+      (list || []).forEach(gd => {
+        keep.add(gd.id);
+        let r = groups.get(gd.id);
+        if (!r) { r = { g: S('g', { class: 'grp' }), rect: S('rect', { rx: 14 }), t: S('text') }; r.g.append(r.rect, r.t); gGroups.append(r.g); groups.set(gd.id, r); }
+        r.g.setAttribute('class', 'grp' + (gd.tone ? ' ' + gd.tone : ''));
+        Object.entries({ x: gd.x, y: gd.y, width: gd.w, height: gd.h }).forEach(([k, v]) => r.rect.setAttribute(k, v));
+        r.t.setAttribute('x', gd.x + 12); r.t.setAttribute('y', gd.y + 18); r.t.textContent = gd.label || '';
+      });
+      for (const [id, r] of groups) if (!keep.has(id)) { r.g.remove(); groups.delete(id); }
+    }
+
+    function setLinks(list) {
+      gLinks.textContent = '';
+      (list || []).forEach(lk => {
+        const A = nodes.get(lk.a), B = nodes.get(lk.b);
+        if (!A || !B) return;
+        gLinks.append(S('line', { x1: A.x, y1: A.y, x2: B.x, y2: B.y, class: 'lk' + (lk.dash ? ' dash' : '') + (lk.tone ? ' ' + lk.tone : '') }));
+        if (lk.label) {
+          const mx = (A.x + B.x) / 2 + (lk.dx || 0), my = (A.y + B.y) / 2 + (lk.dy || 0);
+          const t = S('text', { x: mx, y: my + 3.5, class: 'lk-l', 'text-anchor': 'middle' });
+          t.textContent = lk.label;
+          const bw = lk.label.length * 6.4 + 10;
+          gLinks.append(S('rect', { x: mx - bw / 2, y: my - 8, width: bw, height: 16, rx: 4, class: 'lk-lb' }), t);
+        }
+      });
+    }
+
+    const api = {
+      svg, W, H,
+      set(spec) {
+        spec = spec || {};
+        setGroups(spec.groups);
+        const keep = new Set();
+        (spec.nodes || []).forEach(n => {
+          keep.add(n.id);
+          let r = nodes.get(n.id);
+          if (!r) { r = buildNode(n); nodes.set(n.id, r); }
+          paint(r, n);
+        });
+        for (const [id, r] of nodes) if (!keep.has(id)) {
+          nodes.delete(id);
+          r.g.style.opacity = '0';
+          setTimeout(() => r.g.remove(), 380);
+        }
+        setLinks(spec.links);
+      },
+      node: id => nodes.get(id),
+      has: id => nodes.has(id),
+      speed(v) { speed = v; },
+      /* Move a dot from node a to node b. tone: req | res | evt | bad | warn */
+      packet(a, b, o) {
+        o = o || {};
+        const A = nodes.get(a), B = nodes.get(b);
+        if (!A || !B || gPk.childElementCount > 80 || document.hidden) return Promise.resolve();
+        const c = S('circle', { r: o.r || 5.5, class: 'pk ' + (o.tone || 'req'), cx: A.x, cy: A.y });
+        gPk.append(c);
+        const dur = (o.dur || 750) / speed;
+        if (reduceMotion()) { c.setAttribute('cx', B.x); c.setAttribute('cy', B.y); return new Promise(res => setTimeout(() => { c.remove(); res(); }, Math.min(dur, 300))); }
+        return new Promise(res => {
+          const t0 = performance.now();
+          const x1 = A.x, y1 = A.y, x2 = B.x, y2 = B.y;
+          (function f(t) {
+            const k = Math.min(1, (t - t0) / dur);
+            const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+            c.setAttribute('cx', x1 + (x2 - x1) * e);
+            c.setAttribute('cy', y1 + (y2 - y1) * e);
+            if (k < 1 && c.isConnected) requestAnimationFrame(f); else { c.remove(); res(); }
+          })(t0);
+          setTimeout(() => { if (c.isConnected) { c.remove(); res(); } }, dur + 600); // safety when rAF is paused
+        });
+      },
+      /* Speech bubble above a node for a moment. */
+      say(id, text, tone, ms) {
+        const r = nodes.get(id);
+        if (!r) return;
+        const g = S('g', { class: 'say' + (tone ? ' ' + tone : '') });
+        const w = String(text).length * 6.7 + 16, y = r.y - r.h / 2 - 24;
+        g.append(S('rect', { x: r.x - w / 2, y: y - 11, width: w, height: 22, rx: 6 }));
+        const t = S('text', { x: r.x, y: y + 4, 'text-anchor': 'middle' });
+        t.textContent = text;
+        g.append(t);
+        gSay.append(g);
+        setTimeout(() => { g.style.opacity = '0'; setTimeout(() => g.remove(), 320); }, (ms || 1600) / speed);
+      },
+      flash(id) {
+        const r = nodes.get(id);
+        if (!r) return;
+        r.g.classList.remove('flash'); void r.g.getBBox(); r.g.classList.add('flash');
+      },
+      clearFx() { gPk.textContent = ''; gSay.textContent = ''; },
+      destroy() { svg.remove(); nodes.clear(); groups.clear(); }
+    };
+    return api;
+  };
+
+  /* Lay out n units in a grid inside a box. Returns [{x,y}] centres. */
+  L.layoutGrid = function (n, box, unitW, unitH, gap) {
+    unitW = unitW || 78; unitH = unitH || 42; gap = gap || 10;
+    const cols = Math.max(1, Math.floor((box.w - 20 + gap) / (unitW + gap)));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const c = i % cols, r = Math.floor(i / cols);
+      out.push({ x: box.x + 10 + unitW / 2 + c * (unitW + gap), y: box.y + 34 + unitH / 2 + r * (unitH + gap) });
+    }
+    return out;
+  };
+})();
+
+/* sim-lab: the four standard views every topic gets.
+   Overview (facts), Tour (step-by-step animation), Simulate (sandbox + terminal), Check (quiz + checklist).
+   Every field is optional; a tab appears only when its data exists. */
+(function () {
+  'use strict';
+  const L = window.SimLab, h = L.h;
+  L.views = {};
+
+  /* Which tabs a service has, in order. */
+  L.tabsOf = function (svc) {
+    const t = [];
+    if (svc.overview) t.push({ id: 'overview', label: 'Overview' });
+    if (svc.tour) t.push({ id: 'tour', label: 'Tour' });
+    if (svc.sim) t.push({ id: 'sim', label: 'Simulate' });
+    (svc.extraTabs || []).forEach(x => t.push(x));
+    if (svc.quiz || svc.learn) t.push({ id: 'check', label: 'Check' });
+    return t;
+  };
+
+  const metricEl = m => h('div', { class: 'metric' + (m[2] ? ' ' + m[2] : '') }, h('span', { class: 'lbl' }, m[0]), h('b', null, m[1]));
+  const legendEl = items => h('div', { class: 'legend' }, (items || [['req', 'request'], ['res', 'response'], ['evt', 'event'], ['bad', 'error']]).map(([t, l]) => h('span', null, h('i', { style: { background: `var(--${({ req: 'accent', res: 'ok', evt: 'evt', bad: 'bad', warn: 'warn' })[t] || 'accent'})` } }), l)));
+
+  /* ---------- Overview ---------- */
+  const list = (items, cls) => h('ul', { class: 'tick' + (cls ? ' ' + cls : '') }, items.map(x => h('li', { html: x })));
+  L.views.overview = function (el, svc) {
+    const o = svc.overview;
+    L.mark(svc.id, 'overview');
+    const hero = [
+      h('div', { class: 'card' }, h('span', { class: 'lbl' }, 'What it is'), h('p', { class: 'what', html: o.what || '' }), o.analogy && h('p', { class: 'analogy', html: '<b>Think of it as:</b> ' + o.analogy })),
+      (o.signals && o.signals.length) ? h('div', { class: 'card' }, h('span', { class: 'lbl' }, o.signalsTitle || 'Clues that point here'), h('div', { style: { height: '8px' } }), list(o.signals, 'sig')) : null
+    ].filter(Boolean);
+    const pair = [
+      o.use && h('div', { class: 'card' }, h('h3', null, 'Use it when'), list(o.use)),
+      o.avoid && h('div', { class: 'card' }, h('h3', null, 'Pick something else when'), list(o.avoid, 'no'))
+    ].filter(Boolean);
+    const nums = (o.numbers || o.pricing) ? h('div', { class: 'card' }, h('h3', null, 'Numbers and limits'),
+      o.numbers && h('div', { class: 'tbl-wrap' }, h('table', { class: 'kv' }, h('tbody', null, o.numbers.map(([k, v]) => h('tr', null, h('td', { html: k }), h('td', { html: v })))))),
+      o.pricing && h('p', { style: { marginTop: '10px', fontSize: '.88rem' }, html: '<b>Cost:</b> ' + o.pricing })) : null;
+    const rel = (svc.related && svc.related.length) ? h('div', { class: 'card' }, h('h3', null, 'Works with'),
+      h('div', { class: 'conn' }, svc.related.map(c => h('div', null, h('span', { class: 'hex sm', style: { '--c': c.color || 'var(--accent)' } }, (c.abbr || c.name || '').slice(0, 3)), h('span', null, h('b', null, c.name), ' ', h('span', { class: 'arrow' }, c.dir || '→')), h('span', { class: 'how-txt', html: c.how || '' }))))) : null;
+    const bottom = [nums, rel].filter(Boolean);
+    el.append(...[
+      h('div', { class: hero.length > 1 ? 'ov-hero' : '', style: { marginBottom: '14px' } }, hero),
+      pair.length ? h('div', { class: pair.length > 1 ? 'grid2' : '', style: { marginBottom: '14px' } }, pair) : null,
+      o.terms && h('div', { class: 'card', style: { marginBottom: '14px' } }, h('h3', null, 'Key terms'), h('div', { class: 'terms' }, o.terms.map(([t, d]) => h('div', { class: 'term' }, h('b', null, t), h('span', { html: d }))))),
+      bottom.length ? h('div', { class: bottom.length > 1 ? 'grid2' : '' }, bottom) : null,
+      o.source && h('p', { class: 'note-src', html: o.source })
+    ].filter(Boolean)); // native append would print "undefined" for missing parts
+  };
+
+  /* ---------- Flow: a short way to write tour animations ----------
+     flow: [
+       ['client', 'server'],                  // dot from client to server (tone 'req')
+       ['server', 'client', 'res', '200 OK'], // tone, then a bubble at the receiver
+       { say: 'server', text: 'thinking', tone: 'warn' },
+       { wait: 600 },
+       { all: [['a', 'b'], ['a', 'c']] },     // at the same time
+       { set: spec },                         // swap the diagram (e.g. a node goes down)
+       { flash: 'server' },
+       { metrics: [['Latency', '120 ms', 'ok']] }
+     ] */
+  const SAY_TONE = { res: 'ok', bad: 'bad', evt: 'evt', warn: 'warn' };
+  L.playFlow = async function (S, t, flow, setMetrics) {
+    const one = async it => {
+      if (t.dead) throw L.CANCELLED;
+      if (Array.isArray(it)) {
+        const [a, b, tone, text] = it;
+        await S.packet(a, b, { tone: tone || 'req' });
+        if (text) S.say(b, text, SAY_TONE[tone]);
+      } else if (it.all) await Promise.all(it.all.map(one));
+      else if (it.wait) await t.sleep(it.wait);
+      else if (it.say) S.say(it.say, it.text, it.tone, it.ms);
+      else if (it.set) S.set(it.set);
+      else if (it.flash) S.flash(it.flash);
+      else if (it.metrics && setMetrics) setMetrics(it.metrics);
+      if (Array.isArray(it) || it.say) await t.sleep(it.gap || 250);
+    };
+    for (const it of flow) await one(it);
+  };
+
+  /* ---------- Tour ---------- */
+  L.views.tour = function (el, svc, ctx) {
+    const T = svc.tour, steps = T.steps;
+    const seenKey = 'tour_' + svc.id;
+    const seen = new Set(L.store.get(seenKey, []));
+    let i = L.clamp(L.store.get('tourAt_' + svc.id, 0), 0, steps.length - 1);
+    let tok = null;
+
+    const metrics = h('div', { class: 'stage-top' });
+    const sceneBox = h('div', { class: 'scene-box' });
+    const strip = h('div', { class: 'steps-strip' });
+    const stage = h('div', { class: 'stage' }, metrics, sceneBox, legendEl(T.legend), strip);
+    const kick = h('span', { class: 'chip acc' }), count = h('span', { class: 'lbl' });
+    const title = h('h2', { class: 'step-title' }), body = h('div', { class: 'step-body' }), tipBox = h('div');
+    const back = h('button', { class: 'btn', onclick: () => go(i - 1) }, '← Back');
+    const next = h('button', { class: 'btn pri', onclick: () => go(i + 1) });
+    const replay = h('button', { class: 'btn sm', onclick: () => go(i), title: 'Replay this step' }, '↻ Replay');
+    const panel = h('div', { class: 'card' }, h('div', { class: 'step-k' }, count, kick), title, body, tipBox, h('div', { class: 'nav-row' }, back, next), h('div', { class: 'keys', html: '<kbd>←</kbd> <kbd>→</kbd> step · <kbd>R</kbd> replay' }));
+    const learn = svc.learn && h('div', { class: 'card' }, h('span', { class: 'lbl' }, 'This tour covers'), h('ul', { class: 'tick', style: { marginTop: '8px' } }, svc.learn.map(s => h('li', { html: s }))));
+    el.append(h('div', { class: 'stage-grid' }, stage, h('div', { class: 'side' }, panel, learn, h('div', { style: { display: 'flex', gap: '8px' } }, replay))));
+
+    const S = L.Scene(sceneBox, { w: T.w, h: T.h, label: svc.name + ' tour diagram' });
+
+    function drawStrip() {
+      strip.textContent = '';
+      steps.forEach((st, k) => strip.append(h('button', { class: (k === i ? 'cur ' : '') + (seen.has(k) ? 'seen' : ''), onclick: () => go(k), 'aria-label': 'Step ' + (k + 1) + ': ' + st.title }, k + 1)));
+      strip.append(h('span', { class: 'now' }, steps[i].title));
+    }
+    function go(k) {
+      if (k < 0) return;
+      if (k >= steps.length) { ctx.switchTab(L.tabsOf(svc).find(t => t.id === 'sim') ? 'sim' : 'check'); return; }
+      i = k;
+      seen.add(i);
+      L.store.set(seenKey, Array.from(seen));
+      L.store.set('tourAt_' + svc.id, i);
+      if (i === steps.length - 1) L.mark(svc.id, 'tour');
+      const st = steps[i];
+      if (tok) tok.stop();
+      S.clearFx();
+      tok = L.Cancel();
+      count.textContent = 'Step ' + (i + 1) + ' of ' + steps.length;
+      kick.textContent = st.kind || 'Concept';
+      kick.className = 'chip ' + ({ 'Exam trap': 'warn', 'Common mistake': 'warn', 'Failure': 'bad', 'Event': 'evt' }[st.kind] || 'acc');
+      title.textContent = st.title;
+      body.innerHTML = st.body;
+      tipBox.textContent = '';
+      if (st.tip) tipBox.append(h('div', { class: 'tip' }, h('span', { class: 'lbl' }, 'Good to know'), h('span', { html: st.tip })));
+      if (st.trap) tipBox.append(h('div', { class: 'tip trap' }, h('span', { class: 'lbl' }, T.trapLabel || 'Common mistake'), h('span', { html: st.trap })));
+      back.disabled = i === 0;
+      const nextName = steps[i + 1] ? steps[i + 1].title : (svc.sim ? 'Try the simulator' : 'Check yourself');
+      next.textContent = 'Next: ' + nextName + ' →';
+      metrics.textContent = '';
+      (st.metrics || T.metrics || []).forEach(m => metrics.append(metricEl(m)));
+      metrics.hidden = !metrics.childElementCount;
+      const spec = typeof st.spec === 'function' ? st.spec() : (st.spec || T.spec);
+      S.set(spec);
+      drawStrip();
+      const run = st.run || (st.flow && ((S2, t2, m2) => { S2.set(spec); return L.playFlow(S2, t2, st.flow, m2); }));
+      if (run) {
+        const t = tok;
+        (async () => {
+          try {
+            await t.sleep(450);
+            do { await run(S, t, m => { metrics.textContent = ''; m.forEach(x => metrics.append(metricEl(x))); metrics.hidden = !m.length; }); await t.sleep(1400); } while (!t.dead && st.loop !== false);
+          } catch (e) { if (e !== L.CANCELLED) console.error(e); }
+        })();
+      }
+    }
+    const onKey = e => {
+      if (e.target.closest('input,textarea,select')) return;
+      if (e.key === 'ArrowRight') go(i + 1); else if (e.key === 'ArrowLeft') go(i - 1); else if (e.key === 'r' || e.key === 'R') go(i);
+    };
+    document.addEventListener('keydown', onKey);
+    go(i);
+    return () => { if (tok) tok.stop(); document.removeEventListener('keydown', onKey); };
+  };
+
+  /* ---------- Simulate ---------- */
+  L.views.sim = function (el, svc) {
+    const D = svc.sim;
+    let st = D.init();
+    let running = true, speed = 1, simT = 0, last = performance.now();
+    const logBox = h('div', { class: 'log', 'aria-live': 'polite' });
+    const metrics = h('div', { class: 'stage-top' });
+    const sceneBox = h('div', { class: 'scene-box' });
+    const explain = h('div', { class: 'explain' });
+    const clock = h('span', { class: 'clock' });
+    const playBtn = h('button', { class: 'btn sm', onclick: () => { running = !running; playBtn.textContent = running ? '❚❚ Pause' : '▶ Run'; } }, '❚❚ Pause');
+    const speeds = h('div', { class: 'seg', role: 'group', 'aria-label': 'Speed' }, [1, 2, 4].map(v => h('button', { 'aria-pressed': v === 1 ? 'true' : 'false', onclick: e => { speed = v; S.speed(v); speeds.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b === e.currentTarget ? 'true' : 'false')); } }, v + '×')));
+    let pending = []; // [{at, fn}] scheduled with api.after(seconds, fn)
+    const resetBtn = h('button', { class: 'btn sm', onclick: () => { st = D.init(); simT = 0; pending = []; logBox.textContent = ''; S.clearFx(); api.log('Reset to the starting setup.', 'acc'); render(true); } }, '↺ Reset');
+    const stage = h('div', { class: 'stage' }, metrics, sceneBox, legendEl(D.legend), explain, logBox);
+
+    const ctlBox = h('div', { class: 'card' }, h('span', { class: 'lbl' }, 'Settings'));
+    const syncers = [];
+    (D.controls || []).forEach(c => {
+      if (c.type === 'heading') { ctlBox.append(h('div', { class: 'lbl', style: { marginTop: '12px' } }, c.label)); return; }
+      if (c.type === 'actions') {
+        ctlBox.append(h('div', { class: 'ctl-actions' }, c.items.map(a => h('button', { class: 'btn sm' + (a.tone === 'bad' ? ' danger' : ''), onclick: () => { a.run(st, api); L.mark(svc.id, 'sim'); render(true); } }, a.label))));
+        return;
+      }
+      const id = 'c-' + svc.id + '-' + c.id;
+      let input, out = h('output', { for: id });
+      if (c.type === 'range') {
+        input = h('input', { type: 'range', id, min: c.min, max: c.max, step: c.step || 1 });
+        input.addEventListener('input', () => { c.set(st, +input.value, api); out.textContent = (c.fmt || String)(+input.value); L.mark(svc.id, 'sim'); render(true); });
+        ctlBox.append(h('div', { class: 'ctl' }, h('label', { for: id }, h('span', null, c.label), out), input, c.help && h('small', { html: c.help })));
+        syncers.push(() => { const v = c.get(st); if (document.activeElement !== input) input.value = v; out.textContent = (c.fmt || String)(v); });
+      } else if (c.type === 'toggle') {
+        input = h('input', { type: 'checkbox', id });
+        input.addEventListener('change', () => { c.set(st, input.checked, api); L.mark(svc.id, 'sim'); render(true); });
+        ctlBox.append(h('div', { class: 'ctl' }, h('label', { class: 'switch', for: id }, input, h('span', null, c.label)), c.help && h('small', { html: c.help })));
+        syncers.push(() => { input.checked = !!c.get(st); });
+      } else if (c.type === 'select') {
+        input = h('select', { id }, c.options.map(([v, l]) => h('option', { value: v }, l)));
+        input.addEventListener('change', () => { c.set(st, input.value, api); L.mark(svc.id, 'sim'); render(true); });
+        ctlBox.append(h('div', { class: 'ctl' }, h('label', { for: id }, c.label), input, c.help && h('small', { html: c.help })));
+        syncers.push(() => { if (document.activeElement !== input) input.value = c.get(st); });
+      }
+    });
+
+    const scen = D.scenarios && h('div', { class: 'card' }, h('span', { class: 'lbl' }, 'Try these'), h('div', { class: 'scen', style: { marginTop: '8px' } }, D.scenarios.map(sc => h('button', { onclick: () => { api.log('▶ ' + sc.title, 'acc'); sc.run(st, api); L.mark(svc.id, 'sim'); render(true); } }, h('b', null, sc.title), h('span', null, sc.desc)))));
+
+    // Terminal
+    let termBox = null;
+    if (D.cli) {
+      const out = h('div', { class: 'term-out', 'aria-live': 'polite' });
+      const inp = h('input', { id: 'term-' + svc.id, autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Command', placeholder: 'type help' });
+      const hist = []; let hi = 0;
+      const print = (txt, cls) => { out.append(h('div', { class: cls || '' }, txt)); out.scrollTop = out.scrollHeight; };
+      const runLine = line => {
+        line = line.trim(); if (!line) return;
+        hist.push(line); hi = hist.length;
+        print(D.cli.prompt + ' ' + line, 'p');
+        if (line === 'clear') { out.textContent = ''; return; }
+        if (line === 'help') { print('Commands this simulator understands:', 'mut'); D.cli.cookbook.forEach(c => print('  ' + c)); print('Flags can be written --flag=value or --flag value.', 'mut'); return; }
+        const res = D.cli.run(L.parseCmd(line, D.cli.boolFlags), st, api);
+        L.mark(svc.id, 'sim');
+        if (res == null) print('Not supported in this simulator. Type help to see the commands it knows.', 'warn');
+        else (Array.isArray(res) ? res : [[res]]).forEach(r => Array.isArray(r) ? print(r[0], r[1]) : print(r));
+        render(true);
+      };
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { runLine(inp.value); inp.value = ''; }
+        else if (e.key === 'ArrowUp') { if (hi > 0) { hi--; inp.value = hist[hi]; } e.preventDefault(); }
+        else if (e.key === 'ArrowDown') { if (hi < hist.length - 1) { hi++; inp.value = hist[hi]; } else { hi = hist.length; inp.value = ''; } e.preventDefault(); }
+      });
+      (D.cli.intro || []).forEach(l => print(l, 'mut'));
+      termBox = h('div', null,
+        h('div', { class: 'term-box' }, h('div', { class: 'term-head' }, h('i'), h('i'), h('i'), h('span', null, (D.cli.title || 'Terminal') + ' (simulated)')), out, h('div', { class: 'term-in' }, h('span', null, '$'), inp)),
+        h('div', { class: 'cook' }, D.cli.cookbook.map(c => h('button', { title: 'Put this command in the terminal', onclick: () => { inp.value = c; inp.focus(); } }, c))));
+    }
+
+    el.append(
+      h('div', { class: 'sim-bar' }, playBtn, speeds, resetBtn, clock, h('span', { class: 'chip' }, 'Time runs faster than real life')),
+      h('div', { class: 'stage-grid' }, h('div', { class: 'side' }, stage, termBox), h('div', { class: 'side' }, scen, ctlBox))
+    );
+    const S = L.Scene(sceneBox, { w: D.w, h: D.h, label: svc.name + ' simulation' });
+
+    const api = {
+      scene: S,
+      log(msg, tone) {
+        const m = Math.floor(simT / 60), s = Math.floor(simT % 60);
+        logBox.prepend(h('div', null, h('time', null, String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0')), h('span', { class: tone || '', html: String(msg) })));
+        while (logBox.childElementCount > 80) logBox.lastChild.remove();
+      },
+      packet: (a, b, tone, dur) => S.packet(a, b, { tone, dur }),
+      say: (id, t, tone, ms) => S.say(id, t, tone, ms),
+      flash: id => S.flash(id),
+      now: () => simT,
+      after: (sec, fn) => { pending.push({ at: simT + sec, fn }); },
+      refresh: () => render(true)
+    };
+
+    let lastDraw = 0;
+    function render(force) {
+      const now = performance.now();
+      if (!force && now - lastDraw < 240) return;
+      lastDraw = now;
+      S.set(D.view(st, api));
+      metrics.textContent = '';
+      D.metrics(st).forEach(m => metrics.append(metricEl(m)));
+      const ex = D.explain ? D.explain(st) : '';
+      explain.hidden = !ex;
+      explain.innerHTML = ex ? '<b>What is happening:</b><span>' + ex + '</span>' : '';
+      syncers.forEach(f => f());
+      const m = Math.floor(simT / 60), s = Math.floor(simT % 60);
+      clock.textContent = 'sim time ' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+    const timer = setInterval(() => {
+      const now = performance.now();
+      const realDt = Math.min(0.25, (now - last) / 1000);
+      last = now;
+      if (!running || document.hidden) return;
+      const dt = realDt * speed;
+      simT += dt;
+      if (pending.length) {
+        const due = pending.filter(p => p.at <= simT);
+        pending = pending.filter(p => p.at > simT);
+        due.forEach(p => p.fn(st, api));
+      }
+      D.tick(st, dt, api);
+      render(false);
+    }, 100);
+    if (D.onStart) D.onStart(st, api);
+    render(true);
+    return () => clearInterval(timer);
+  };
+
+  /* ---------- Check ---------- */
+  L.views.check = function (el, svc) {
+    const Q = svc.quiz || [];
+    const key = 'quiz_' + svc.id;
+    const saved = L.store.get(key, {});
+    const scoreB = h('b'), scoreT = h('span', { style: { color: 'var(--muted)', fontSize: '.88rem' } });
+    const update = () => {
+      const answered = Object.keys(saved).length, right = Object.values(saved).filter(Boolean).length;
+      scoreB.textContent = right + ' / ' + Q.length;
+      scoreT.textContent = answered < Q.length ? (Q.length - answered) + ' left. Your first click on each question counts.' : (right / Q.length >= 0.75 ? 'Passed. Nice work.' : 'Below 75%. Read the explanations, replay the tour, then reset and try again.');
+      if (answered === Q.length && right / Q.length >= 0.75) L.mark(svc.id, 'check');
+    };
+    const quiz = h('div', { class: 'quiz' }, Q.map((q, qi) => {
+      const why = h('p', { class: 'why', hidden: true, html: q.y });
+      const opts = h('div', { class: 'opts' });
+      const reveal = pick => {
+        opts.querySelectorAll('.opt').forEach((b, k) => { b.disabled = true; if (k === q.a) b.classList.add('right'); else if (k === pick) b.classList.add('wrong'); });
+        why.hidden = false;
+      };
+      q.o.forEach((o, k) => opts.append(h('button', { class: 'opt', onclick: () => {
+        if (!(qi in saved)) { saved[qi] = k === q.a; L.store.set(key, saved); update(); }
+        reveal(k);
+      } }, h('b', null, 'ABCD'[k]), h('span', { html: o }))));
+      if (qi in saved) reveal(saved[qi] ? q.a : -1);
+      return h('div', { class: 'q' }, h('p', { html: (qi + 1) + '. ' + q.q }), opts, why);
+    }));
+    const learnBox = svc.learn && h('div', { class: 'card' }, h('h3', null, 'Can you explain these out loud?'), h('div', { class: 'learn' }, svc.learn.map((s, k) => {
+      const lk = 'learn_' + svc.id;
+      const got = L.store.get(lk, {});
+      const id = 'lrn-' + svc.id + '-' + k;
+      const cb = h('input', { type: 'checkbox', id });
+      cb.checked = !!got[k];
+      cb.addEventListener('change', () => { const g = L.store.get(lk, {}); g[k] = cb.checked; L.store.set(lk, g); });
+      return h('label', { for: id }, cb, h('span', { html: s }));
+    })));
+    const phases = h('div', { class: 'card' }, h('h3', null, 'Your progress on ' + svc.name), h('div', { class: 'learn' }, L.tabsOf(svc).map(t => h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', fontSize: '.9rem' } }, h('span', { class: 'chip' + (L.prog(svc.id)[t.id] ? ' on' : '') }, L.prog(svc.id)[t.id] ? 'done' : 'to do'), t.label))));
+    const resetBtn = h('button', { class: 'btn sm', onclick: () => { L.store.set(key, {}); L.mark(svc.id, 'check', false); el.textContent = ''; L.views.check(el, svc); } }, 'Reset answers');
+    el.append(h('div', { class: 'check-grid' },
+      h('div', { class: 'side' }, h('div', { class: 'card score' }, h('div', null, h('span', { class: 'lbl' }, 'Score'), h('br'), scoreB), scoreT, h('span', { style: { flex: 1 } }), resetBtn), quiz),
+      h('div', { class: 'side' }, phases, learnBox)));
+    update();
+  };
+})();
+
+</script>
+<script>
+(function () {
+  'use strict';
+  const L = window.SimLab;
+
+  /* ---------- Tour diagram ---------- */
+  const LINKS = [
+    { a: 'client', b: 'proxy', label: 'TCP' },
+    { a: 'proxy', b: 'server', label: 'TCP' }
+  ];
+  const base = {
+    groups: [],
+    nodes: [
+      { id: 'client', kind: 'actor', x: 90, y: 215, label: 'Browser', sub: 'new WebSocket', w: 150 },
+      { id: 'proxy', kind: 'svc', x: 340, y: 215, label: 'Reverse proxy', sub: 'nginx: idle 60 s', abbr: 'PX' },
+      { id: 'server', kind: 'svc', x: 610, y: 215, label: 'App server', sub: 'WebSocket endpoint', abbr: 'WS' },
+      { id: 'conn', kind: 'unit', x: 340, y: 340, label: 'socket', sub: 'CLOSED', state: 'cold' }
+    ],
+    links: LINKS
+  };
+  const sock = (state, sub, more) => L.spec(base, Object.assign({ conn: { state, sub } }, more || {}));
+  const noSock = L.spec(base, { conn: null });
+  const SOCK_CONNECTING = sock('start', 'CONNECTING');
+  const SOCK_OPEN = sock('ready', 'OPEN');
+  const cut = (spec) => Object.assign({}, spec, {
+    links: [{ a: 'client', b: 'proxy', label: 'cable cut', dash: true, tone: 'bad' }, { a: 'proxy', b: 'server', label: 'TCP' }]
+  });
+
+  /* Reconnect step: six browser tabs instead of one browser */
+  const TABS = ['t1', 't2', 't3', 't4', 't5', 't6'];
+  const tabsSpec = (state, serverState) => {
+    const nodes = TABS.map((id, i) => ({ id, kind: 'unit', x: 90, y: 60 + i * 62, label: 'tab ' + (i + 1), sub: state === 'ready' ? 'OPEN' : state === 'down' ? 'CLOSED' : 'retry', state }));
+    return L.spec(base, { client: null, conn: null, server: { state: serverState } }, {
+      nodes,
+      links: TABS.map(id => ({ a: id, b: 'proxy' }))
+    });
+  };
+
+  /* ---------- Simulator model ---------- */
+  const mkConn = (i) => ({ id: 'c' + (i + 1), n: i + 1, state: 'start', t: 0, idle: 0, hbIn: 0, retryIn: 0, tries: 0, code: '', busy: 0 });
+  const resize = (s) => {
+    while (s.conns.length < s.clients) s.conns.push(mkConn(s.conns.length));
+    s.conns.length = s.clients;
+  };
+  const retryDelay = (s, c) => {
+    if (s.reconnect === 'none') return Infinity;
+    if (s.reconnect === 'now') return 0.2;
+    return Math.random() * Math.min(30, 5 * Math.pow(2, c.tries)); // first try: random 0-5 s, then doubles (cap 30 s)
+  };
+  const goDown = (s, c, code) => {
+    c.state = 'down'; c.code = code; c.idle = 0; c.busy = 0;
+    c.retryIn = retryDelay(s, c); c.tries++;
+  };
+  const startHandshake = (s, c, now) => {
+    c.state = 'start'; c.t = 0; c.code = '';
+    s.hs.push(now);
+  };
+  const serverDown = (s, now) => now < s.serverUpAt;
+  const netDown = (s, now) => now < s.netUpAt;
+
+  const restartServer = (s, api) => {
+    const now = api.now();
+    let n = 0;
+    s.conns.forEach(c => {
+      if (c.state === 'open') {
+        if (n < 3) api.packet('server', c.id, 'bad');
+        goDown(s, c, '1001'); n++;
+      } else if (c.state === 'start') goDown(s, c, '1006');
+    });
+    s.serverUpAt = now + 4; s.peakHs = 0; s.hs = []; s._down = true;
+    api.log('Server restarting: sent Close <code>1001</code> (Going Away) to ' + n + ' connections. Back in 4 s.', 'bad');
+    api.flash('server');
+  };
+  const dropNetwork = (s, api) => {
+    s.netUpAt = api.now() + 8; s._net = true;
+    api.log('Network dropped for 8 s. No Close frame is sent, so nobody is told.', 'bad');
+    api.flash('proxy');
+  };
+  const closeAll = (s, api) => {
+    let n = 0;
+    s.conns.forEach(c => {
+      if (c.state === 'open' || c.state === 'start') {
+        if (n < 3) api.packet(c.id, 'server', 'req');
+        c.state = 'closed'; c.code = '1000'; n++;
+      }
+    });
+    api.log(n + ' clients sent Close <code>1000</code>; the server echoed Close and the TCP connections ended cleanly. No reconnects.', 'ok');
+  };
+  const openAll = (s, api) => {
+    const now = api.now();
+    s.conns.forEach(c => { if (c.state === 'closed' || c.state === 'down') { c.tries = 0; startHandshake(s, c, now); } });
+    api.log('All clients call <code>new WebSocket(url)</code> again.', '');
+  };
+
+  const fresh = (s, api) => {
+    s.conns = []; resize(s);
+    s.stats = { msgs: 0, reconnects: 0, lost: 0, idleKills: 0 };
+    s.hs = []; s.msgT = []; s.peakHs = 0; s.serverUpAt = 0; s.netUpAt = 0; s._down = false; s._net = false;
+    const now = api ? api.now() : 0;
+    s.conns.forEach(c => s.hs.push(now));
+  };
+
+  /* Scenario helper: start with every connection already open (no startup handshakes counted). */
+  const allOpen = (s, hb) => { s.conns.forEach(c => { c.state = 'open'; c.hbIn = hb(); }); s.hs = []; s.peakHs = 0; };
+  const recent = (arr, now, win) => arr.filter(t => now - t <= win).length;
+
+  /* ---------- Topic ---------- */
+  L.topic({
+    id: 'websocket-full',
+    name: 'WebSocket',
+    abbr: 'WS',
+    color: 'var(--c-blue)',
+    tagline: 'One HTTP request upgrades into a long-lived, two-way connection, so the server can push messages without being asked.',
+    chips: [['RFC 6455', 'acc'], ['Full-duplex', 'ok'], ['Long-lived', 'evt'], ['Breaks behind proxies', 'warn']],
+
+    overview: {
+      what: 'WebSocket starts as an HTTP <code>GET</code> with <code>Upgrade: websocket</code>. If the server answers <code>101 Switching Protocols</code>, the same TCP connection stays open and both sides send small <b>frames</b> whenever they like.',
+      analogy: 'HTTP is sending letters: each question gets one reply. WebSocket is a phone call: you dial once, then either side can talk at any time until someone hangs up.',
+      signalsTitle: 'Clues you want WebSocket',
+      signals: [
+        'The server must tell the browser something without being asked (chat, notifications, live prices).',
+        'Many small messages flow both ways (multiplayer games, shared cursors, collaborative editing).',
+        'You are polling an endpoint every few seconds and most answers are "nothing new".'
+      ],
+      use: [
+        'Low-latency, two-way messaging between a browser and your server.',
+        'Server push where opening a new HTTP request per update is too slow or too costly.'
+      ],
+      avoid: [
+        'Plain request/response (load a page, submit a form): ordinary HTTP is simpler and caches.',
+        'When the browser must slow down a fast sender: the classic <code>WebSocket</code> API has no backpressure (MDN points to <code>WebSocketStream</code>).',
+        'When you cannot configure the proxies and load balancers in the path: they must forward the upgrade and tolerate long-lived connections.'
+      ],
+      terms: [
+        ['Upgrade', 'The HTTP/1.1 mechanism the handshake uses: <code>Upgrade: websocket</code> + <code>Connection: Upgrade</code>.'],
+        ['Frame', 'The unit on the wire: an opcode, a length and a payload.'],
+        ['Opcode', '<code>0x1</code> text, <code>0x2</code> binary, <code>0x8</code> Close, <code>0x9</code> Ping, <code>0xA</code> Pong.'],
+        ['Ping / Pong', 'Control frames. A Ping must be answered with a Pong carrying the same payload.'],
+        ['Close code', 'Two bytes in the Close frame, e.g. <code>1000</code> normal, <code>1001</code> going away.'],
+        ['Masking', 'Every client-to-server frame is XOR-masked with a fresh key; server frames are not.']
+      ],
+      numbers: [
+        ['Sec-WebSocket-Version', '13'],
+        ['Success status', '101 Switching Protocols'],
+        ['Control frame payload', '≤ 125 bytes'],
+        ['nginx idle timeout (default)', '60 s'],
+        ['Suggested first reconnect delay', 'random 0–5 s'],
+        ['Normal close code', '1000']
+      ],
+      source: 'Protocol facts from RFC 6455; browser API from MDN; proxy timeout from the nginx docs. Other proxies and load balancers use different timeouts.'
+    },
+
+    tour: {
+      w: 820, h: 430, trapLabel: 'Common mistake', spec: base,
+      steps: [
+        {
+          title: 'Why WebSocket exists',
+          kind: 'How it works',
+          spec: noSock,
+          body: '<p>With plain HTTP the browser asks and the server answers. Then the exchange is over.</p><p>When something new happens on the server, it has no way to tell the browser. The browser has to ask again (polling).</p>',
+          flow: [
+            ['client', 'proxy', 'req', 'GET /inbox'],
+            ['proxy', 'server', 'req'],
+            ['server', 'proxy', 'res'],
+            ['proxy', 'client', 'res', '200 OK'],
+            { wait: 700 },
+            { say: 'server', text: 'new message! no way to send it', tone: 'warn' },
+            { wait: 1400 }
+          ]
+        },
+        {
+          title: 'The opening handshake',
+          kind: 'How it works',
+          body: '<p>The browser sends an HTTP <code>GET</code> with <code>Upgrade: websocket</code>, <code>Connection: Upgrade</code>, a random <code>Sec-WebSocket-Key</code> and <code>Sec-WebSocket-Version: 13</code>.</p><p>The server agrees with <code>101 Switching Protocols</code> and a <code>Sec-WebSocket-Accept</code> header. From now on the connection speaks WebSocket, not HTTP.</p>',
+          tip: '<code>Sec-WebSocket-Accept</code> is base64(SHA-1(key + a fixed GUID)). It proves the server really understood the WebSocket request.',
+          metrics: [['readyState', 'CONNECTING', 'warn'], ['Status', 'waiting', '']],
+          flow: [
+            { set: SOCK_CONNECTING },
+            { metrics: [['readyState', 'CONNECTING', 'warn'], ['Status', 'waiting', '']] },
+            ['client', 'proxy', 'req', 'GET Upgrade'],
+            ['proxy', 'server', 'req', 'Key, Version 13'],
+            { say: 'server', text: 'compute Accept', tone: 'ok' },
+            ['server', 'proxy', 'res', '101'],
+            ['proxy', 'client', 'res', '101 Switching'],
+            { set: SOCK_OPEN },
+            { metrics: [['readyState', 'OPEN', 'ok'], ['Status', '101', 'ok']] },
+            { say: 'client', text: 'onopen', tone: 'ok' },
+            { wait: 1500 }
+          ]
+        },
+        {
+          title: 'Messages in both directions',
+          kind: 'How it works',
+          spec: SOCK_OPEN,
+          body: '<p>The connection stays open. Either side sends a <b>frame</b> whenever it wants: <code>0x1</code> for text, <code>0x2</code> for binary.</p><p>The server can now push without a request. One connection carries thousands of messages, with no new handshake each time.</p>',
+          tip: 'Frames from the client are always masked; frames from the server never are. Masking stops a web page from crafting bytes that a proxy might mistake for an HTTP request and cache.',
+          flow: [
+            { all: [['client', 'proxy', 'req'], ['server', 'proxy', 'evt']] },
+            { all: [['proxy', 'server', 'req', 'text 0x1'], ['proxy', 'client', 'evt', 'push']] },
+            { wait: 300 },
+            ['server', 'proxy', 'evt'],
+            ['proxy', 'client', 'evt', 'push'],
+            { say: 'client', text: 'onmessage', tone: 'ok' },
+            { wait: 900 }
+          ]
+        },
+        {
+          title: 'Keep-alive with Ping and Pong',
+          kind: 'How it works',
+          spec: SOCK_OPEN,
+          body: '<p>When nothing is happening, a quiet connection looks dead to proxies and load balancers in between.</p><p>So one side sends a <code>Ping</code> frame (<code>0x9</code>) every so often. The other side must answer with a <code>Pong</code> (<code>0xA</code>) carrying the same payload. The traffic resets idle timers and proves the peer is still there.</p>',
+          tip: 'Ping and Pong are control frames: at most 125 bytes of payload, never split into fragments.',
+          metrics: [['Proxy idle timer', '40 s', 'warn']],
+          flow: [
+            { metrics: [['Proxy idle timer', '40 s', 'warn']] },
+            { wait: 700 },
+            ['server', 'proxy', 'evt', 'Ping 0x9'],
+            { metrics: [['Proxy idle timer', '0 s', 'ok']] },
+            ['proxy', 'client', 'evt'],
+            ['client', 'proxy', 'res', 'Pong 0xA'],
+            ['proxy', 'server', 'res'],
+            { say: 'server', text: 'peer alive', tone: 'ok' },
+            { wait: 1200 }
+          ]
+        },
+        {
+          title: 'The proxy closes a quiet connection',
+          kind: 'Common mistake',
+          spec: SOCK_OPEN,
+          body: '<p>nginx closes a proxied WebSocket if the server sends <b>no data for 60 seconds</b> (its default <code>proxy_read_timeout</code>).</p><p>A quiet chat room with no pings hits this. The browser gets <code>onclose</code> with code <code>1006</code>: closed without a Close frame.</p>',
+          trap: 'In nginx only data from the server resets this timer. Fix it with server-side Pings, or raise <code>proxy_read_timeout</code>. Other load balancers have their own idle timeouts.',
+          metrics: [['Server silent for', '0 s', 'ok']],
+          flow: [
+            { set: SOCK_OPEN },
+            { metrics: [['Server silent for', '0 s', 'ok']] },
+            { wait: 700 },
+            { metrics: [['Server silent for', '30 s', 'warn']] },
+            { wait: 700 },
+            { metrics: [['Server silent for', '60 s', 'bad']] },
+            { flash: 'proxy' },
+            { say: 'proxy', text: 'timeout: close', tone: 'bad' },
+            { set: sock('down', 'CLOSED', { proxy: { state: 'down' } }) },
+            { all: [['proxy', 'client', 'bad'], ['proxy', 'server', 'bad']] },
+            { say: 'client', text: 'onclose 1006', tone: 'bad' },
+            { wait: 1600 }
+          ]
+        },
+        {
+          title: 'The proxy drops the Upgrade header',
+          kind: 'Common mistake',
+          spec: SOCK_CONNECTING,
+          body: '<p><code>Upgrade</code> and <code>Connection</code> are hop-by-hop headers. nginx does not pass them to the backend unless you set them explicitly.</p><p>The server then sees an ordinary <code>GET</code> and never answers <code>101</code>. Any other status means the handshake failed.</p>',
+          trap: 'In nginx add <code>proxy_set_header Upgrade $http_upgrade;</code> and <code>proxy_set_header Connection "upgrade";</code> (plus <code>proxy_http_version 1.1</code> on versions before 1.29.7).',
+          flow: [
+            { set: SOCK_CONNECTING },
+            ['client', 'proxy', 'req', 'GET Upgrade'],
+            { say: 'proxy', text: 'Upgrade dropped', tone: 'warn' },
+            ['proxy', 'server', 'req', 'plain GET'],
+            ['server', 'proxy', 'bad', 'not 101'],
+            ['proxy', 'client', 'bad', 'not 101'],
+            { set: sock('down', 'CLOSED') },
+            { say: 'client', text: 'onerror, onclose', tone: 'bad' },
+            { wait: 1600 }
+          ]
+        },
+        {
+          title: 'Closing cleanly',
+          kind: 'How it works',
+          spec: SOCK_OPEN,
+          body: '<p>Either side sends a <code>Close</code> frame (<code>0x8</code>) with a two-byte code, such as <code>1000</code> (normal) or <code>1001</code> (going away).</p><p>The other side answers with its own <code>Close</code>. After that nobody sends data, and the TCP connection is closed.</p>',
+          flow: [
+            { set: SOCK_OPEN },
+            ['client', 'proxy', 'req', 'Close 1000'],
+            ['proxy', 'server', 'req'],
+            { set: sock('start', 'CLOSING') },
+            ['server', 'proxy', 'res', 'Close 1000'],
+            ['proxy', 'client', 'res'],
+            { set: sock('cold', 'CLOSED 1000') },
+            { say: 'client', text: 'clean close', tone: 'ok' },
+            { wait: 1600 }
+          ]
+        },
+        {
+          title: 'The cable is pulled',
+          kind: 'Failure',
+          spec: cut(SOCK_OPEN),
+          body: '<p>If the network just disappears, no <code>Close</code> frame is sent. Both sides still think the connection is <code>OPEN</code>.</p><p>They only find out when the next write fails or a <code>Ping</code> gets no <code>Pong</code>. The close code is then <code>1006</code>, which is never sent on the wire: it means "closed without a Close frame".</p>',
+          tip: 'Without heartbeats, a dead connection can look open for a long time, and the server keeps sending into the void.',
+          flow: [
+            { set: cut(SOCK_OPEN) },
+            { say: 'client', text: 'still OPEN?', tone: 'warn' },
+            { wait: 900 },
+            ['server', 'proxy', 'evt', 'Ping 0x9'],
+            ['proxy', 'client', 'bad', 'lost'],
+            { wait: 700 },
+            { say: 'server', text: 'no Pong', tone: 'bad' },
+            { set: cut(sock('down', 'CLOSED 1006')) },
+            { say: 'client', text: 'onclose 1006', tone: 'bad' },
+            { wait: 1600 }
+          ]
+        },
+        {
+          title: 'Reconnecting without a stampede',
+          kind: 'Failure',
+          spec: tabsSpec('ready', 'ready'),
+          body: '<p>When a server restarts, every client loses its connection at the same moment. If they all reconnect instantly, the server gets a burst of handshakes the second it comes back.</p><p>RFC 6455 says clients <b>should</b> wait a random time first (0–5 s is suggested) and back off further after each failure.</p>',
+          trap: 'Reconnecting in a tight loop with no delay. A restart turns into a flood of handshakes, which can knock the server over again.',
+          metrics: [['Strategy', 'instant', 'bad']],
+          flow: [
+            { set: tabsSpec('ready', 'ready') },
+            { metrics: [['Strategy', 'instant', 'bad']] },
+            { say: 'server', text: 'restart: Close 1001', tone: 'bad' },
+            { set: tabsSpec('down', 'down') },
+            { wait: 600 },
+            { set: tabsSpec('start', 'busy') },
+            { all: TABS.map(id => [id, 'proxy', 'bad']) },
+            { say: 'server', text: '6 handshakes at once', tone: 'bad' },
+            { wait: 1000 },
+            { metrics: [['Strategy', 'random delay + backoff', 'ok']] },
+            { set: tabsSpec('down', 'ready') },
+            { wait: 400 },
+            ['t3', 'proxy', 'req'], { wait: 300 },
+            ['t1', 'proxy', 'req'], { wait: 500 },
+            ['t6', 'proxy', 'req'], { wait: 200 },
+            ['t2', 'proxy', 'req'], { wait: 600 },
+            ['t5', 'proxy', 'req'], { wait: 300 },
+            ['t4', 'proxy', 'req'],
+            { set: tabsSpec('ready', 'ready') },
+            { say: 'server', text: 'load spread out', tone: 'ok' },
+            { wait: 1400 }
+          ]
+        }
+      ]
+    },
+
+    sim: {
+      w: 820, h: 430,
+      init: () => {
+        const s = { clients: 8, heartbeat: 25, proxyIdle: 60, rate: 2, reconnect: 'backoff', upgradeOk: true };
+        fresh(s);
+        return s;
+      },
+      tick: (s, dt, api) => {
+        const now = api.now();
+        let budget = 3;
+        const pkt = (a, b, tone) => { if (budget > 0) { api.packet(a, b, tone); budget--; } };
+        const p = s.rate / 60 * dt;
+        const srvDown = serverDown(s, now), net = netDown(s, now);
+        s.now = now; s._down = srvDown; s._net = net;
+        let opened = 0, failed = 0;
+
+        s.conns.forEach(c => {
+          c.busy = Math.max(0, c.busy - dt);
+          if (c.state === 'start') {
+            if (c.t === 0) pkt(c.id, 'proxy', 'req');
+            c.t += dt;
+            if (c.t < 0.3) return;
+            if (net) { goDown(s, c, '1006'); failed++; return; }
+            if (!s.upgradeOk) { pkt('proxy', c.id, 'bad'); goDown(s, c, 'no 101'); failed++; return; }
+            if (srvDown) { goDown(s, c, '1006'); failed++; return; }
+            c.state = 'open'; c.tries = 0; c.idle = 0; c.hbIn = s.heartbeat; opened++;
+            pkt('server', c.id, 'res');
+          } else if (c.state === 'open') {
+            c.idle += dt;
+            // server push
+            if (Math.random() < p) {
+              if (net) { s.stats.lost++; goDown(s, c, '1006'); api.log(c.id + ': server write failed (network gone) → close <code>1006</code>', 'bad'); return; }
+              s.stats.msgs++; s.msgT.push(now); c.idle = 0; c.busy = 0.5; pkt('server', c.id, 'evt');
+            }
+            // client send: does NOT reset nginx's timer (it only counts data from the server)
+            if (Math.random() < p) {
+              if (net) { goDown(s, c, '1006'); api.log(c.id + ': client write failed (network gone) → close <code>1006</code>', 'bad'); return; }
+              s.stats.msgs++; s.msgT.push(now); c.busy = 0.5; pkt(c.id, 'server', 'req');
+            }
+            if (s.heartbeat > 0) {
+              c.hbIn -= dt;
+              if (c.hbIn <= 0) {
+                c.hbIn = s.heartbeat;
+                if (net) { goDown(s, c, '1006'); api.log(c.id + ': Ping got no Pong → close <code>1006</code>', 'bad'); return; }
+                c.idle = 0; pkt('server', c.id, 'evt');
+              }
+            }
+            if (c.idle >= s.proxyIdle) {
+              s.stats.idleKills++;
+              goDown(s, c, '1006');
+              api.log(c.id + ': proxy closed it after ' + s.proxyIdle + ' s with no data from the server → browser sees <code>1006</code>', 'bad');
+              api.flash('proxy');
+            }
+          } else if (c.state === 'down') {
+            if (Math.random() < p) s.stats.lost++; // server had a message for a disconnected client
+            c.retryIn -= dt;
+            if (c.retryIn <= 0) { s.stats.reconnects++; startHandshake(s, c, now); }
+          }
+        });
+
+        if (opened) api.log(opened + ' handshake' + (opened > 1 ? 's' : '') + ' → <code>101 Switching Protocols</code>, OPEN', 'ok');
+        if (failed && !s.upgradeOk) api.log(failed + ' handshake(s) failed: proxy did not forward <code>Upgrade</code>, server answered without <code>101</code>', 'bad');
+        else if (failed && srvDown && now - (s.lastRefused || -9) >= 1) { s.lastRefused = now; api.log(failed + ' handshake(s) refused in this instant: server is restarting', 'warn'); }
+
+        s.hs = s.hs.filter(t => now - t <= 5);
+        s.msgT = s.msgT.filter(t => now - t <= 5);
+        s.peakHs = Math.max(s.peakHs, recent(s.hs, now, 1));
+      },
+      view: (s) => {
+        const burst = recent(s.hs, s.now || 0, 1);
+        const srvState = s._down ? 'down' : null;
+        const pos = L.layoutGrid(s.conns.length, { x: 40, y: 250, w: 740 }, 80, 44, 10);
+        const nodes = [
+          { id: 'client', kind: 'actor', x: 90, y: 100, label: 'Browsers', sub: s.clients + ' tabs', badge: String(s.clients) },
+          { id: 'proxy', kind: 'svc', x: 380, y: 100, label: 'Reverse proxy', sub: 'idle timeout ' + s.proxyIdle + ' s', abbr: 'PX', state: s._net ? 'down' : undefined, hl: !s.upgradeOk },
+          { id: 'server', kind: 'svc', x: 670, y: 100, label: 'App server', sub: s._down ? 'restarting' : (burst >= 8 ? 'handshake burst' : 'ping every ' + (s.heartbeat || 'off') + (s.heartbeat ? ' s' : '')), abbr: 'WS', state: srvState || (burst >= 8 ? 'busy' : 'ready') }
+        ];
+        s.conns.forEach((c, i) => {
+          let state, sub;
+          if (c.state === 'start') { state = 'start'; sub = 'handshake'; }
+          else if (c.state === 'open') { state = c.busy > 0 ? 'busy' : (c.idle > 5 ? 'idle' : 'ready'); sub = 'quiet ' + Math.floor(c.idle) + 's'; }
+          else if (c.state === 'down') { state = 'down'; sub = isFinite(c.retryIn) ? 'retry ' + Math.max(0, c.retryIn).toFixed(1) + 's' : 'CLOSED ' + c.code; }
+          else { state = 'cold'; sub = 'CLOSED ' + c.code; }
+          nodes.push({ id: c.id, kind: 'unit', x: pos[i].x, y: pos[i].y, label: 'conn ' + c.n, sub, state });
+        });
+        return {
+          groups: [{ id: 'g', x: 30, y: 215, w: 760, h: 195, label: 'WebSocket connections (one per tab)' }],
+          nodes,
+          links: [
+            { a: 'client', b: 'proxy', label: s._net ? 'network down' : 'wss://', dash: !!s._net, tone: s._net ? 'bad' : undefined },
+            { a: 'proxy', b: 'server', label: s.upgradeOk ? 'Upgrade ok' : 'no Upgrade', tone: s.upgradeOk ? undefined : 'bad', dash: !s.upgradeOk }
+          ]
+        };
+      },
+      metrics: (s) => {
+        const open = s.conns.filter(c => c.state === 'open').length;
+        const n = s.conns.length;
+        return [
+          ['Open', open + '/' + n, open === n ? 'ok' : open === 0 ? 'bad' : 'warn'],
+          ['Messages/s', (s.msgT.length / 5).toFixed(1), ''],
+          ['Reconnect tries', String(s.stats.reconnects), s.stats.reconnects ? 'warn' : ''],
+          ['Idle kills', String(s.stats.idleKills), s.stats.idleKills ? 'bad' : 'ok'],
+          ['Messages lost', String(s.stats.lost), s.stats.lost ? 'bad' : 'ok'],
+          ['Peak handshakes/s', String(s.peakHs), s.peakHs >= 8 ? 'bad' : '']
+        ];
+      },
+      explain: (s) => {
+        const open = s.conns.filter(c => c.state === 'open');
+        const down = s.conns.filter(c => c.state === 'down');
+        if (s._down) return 'The server is restarting. ' + (s.reconnect === 'now' ? 'Clients retry every 0.2 s, so each one hammers it with handshakes.' : 'Clients wait a random, growing delay before retrying.');
+        if (!s.upgradeOk) return 'The proxy strips <code>Upgrade</code>/<code>Connection</code>, so the server never sends <code>101</code> and every handshake fails.';
+        if (s._net) return open.length + ' connections still say <code>OPEN</code>, but the network is gone. Each finds out only on its next write or missed <code>Pong</code>.';
+        if (s.heartbeat === 0 && open.length && s.rate < 60 / s.proxyIdle * 3) return 'No heartbeat and a quiet server: any connection with no server data for ' + s.proxyIdle + ' s will be cut by the proxy.';
+        if (s.heartbeat >= s.proxyIdle) return 'The Ping interval (' + s.heartbeat + ' s) is not shorter than the proxy timeout (' + s.proxyIdle + ' s), so quiet connections still get cut.';
+        if (down.length && s.reconnect === 'none') return down.length + ' connections are closed and the app never reconnects them.';
+        if (down.length) return down.length + ' connections are waiting to reconnect (' + (s.reconnect === 'now' ? 'instantly' : 'random delay + backoff') + ').';
+        return open.length + ' connections are open. Server Pings every ' + (s.heartbeat || '—') + ' s keep the proxy from timing them out.';
+      },
+      legend: [['req', 'client → server frame'], ['evt', 'server push / Ping'], ['res', '101 / reply'], ['bad', 'Close / failure']],
+      controls: [
+        { type: 'heading', label: 'Clients' },
+        { type: 'range', id: 'clients', label: 'Browser tabs', min: 1, max: 16, step: 1, fmt: v => v + ' tabs', get: s => s.clients,
+          set: (s, v, api) => { const before = s.conns.length; s.clients = v; resize(s); for (let i = before; i < s.conns.length; i++) s.hs.push(api.now()); api.log('Now ' + v + ' tabs, one WebSocket each.', ''); },
+          help: 'Each tab holds one long-lived connection.' },
+        { type: 'range', id: 'rate', label: 'Messages per minute (each side)', min: 0, max: 30, step: 1, fmt: v => v + '/min', get: s => s.rate,
+          set: (s, v) => { s.rate = v; }, help: 'How chatty the app is. Only server messages reset nginx\'s idle timer.' },
+        { type: 'select', id: 'reconnect', label: 'Reconnect strategy', options: [['backoff', 'Random delay + backoff'], ['now', 'Instantly (0.2 s)'], ['none', 'Never']], get: s => s.reconnect,
+          set: (s, v, api) => { s.reconnect = v; api.log('Reconnect strategy: ' + v, ''); },
+          help: 'Backoff: first wait random 0–5 s, then the range doubles per failure. The 30 s cap is this model\'s choice.' },
+        { type: 'heading', label: 'Keep-alive and proxy' },
+        { type: 'range', id: 'heartbeat', label: 'Server Ping interval', min: 0, max: 60, step: 5, fmt: v => v ? v + ' s' : 'off', get: s => s.heartbeat,
+          set: (s, v) => { s.heartbeat = v; s.conns.forEach(c => { c.hbIn = Math.min(c.hbIn, v); }); },
+          help: 'A Ping from the server counts as data, so it resets the proxy timer.' },
+        { type: 'range', id: 'proxyIdle', label: 'Proxy idle timeout', min: 10, max: 120, step: 5, fmt: v => v + ' s', get: s => s.proxyIdle,
+          set: (s, v) => { s.proxyIdle = v; }, help: 'nginx default: 60 s (proxy_read_timeout). Other load balancers differ.' },
+        { type: 'toggle', id: 'upgradeOk', label: 'Proxy forwards Upgrade headers', get: s => s.upgradeOk,
+          set: (s, v, api) => { s.upgradeOk = v; api.log(v ? 'Proxy now sets Upgrade and Connection headers.' : 'Proxy config lost the Upgrade/Connection headers. New handshakes will fail.', v ? 'ok' : 'bad'); },
+          help: 'Without proxy_set_header Upgrade/Connection, nginx sends a plain GET.' },
+        { type: 'actions', items: [
+          { label: 'Restart server', tone: 'bad', run: (s, api) => restartServer(s, api) },
+          { label: 'Pull the cable (8 s)', tone: 'bad', run: (s, api) => dropNetwork(s, api) },
+          { label: 'Close all cleanly', run: (s, api) => closeAll(s, api) },
+          { label: 'Open all again', run: (s, api) => openAll(s, api) }
+        ] }
+      ],
+      scenarios: [
+        { title: 'Quiet app, no heartbeat', desc: 'Pings off, few messages, proxy timeout shortened to 20 s (nginx default is 60 s) so you don\'t wait. Watch connections die and reconnect.',
+          run: (s, api) => { s.heartbeat = 0; s.proxyIdle = 20; s.rate = 1; s.reconnect = 'backoff'; s.upgradeOk = true; fresh(s, api); api.log('Scenario: heartbeat off behind a 20 s proxy.', 'warn'); } },
+        { title: 'Same app with 10 s Pings', desc: 'Server Pings every 10 s, under the 20 s proxy timeout. Idle kills stop.',
+          run: (s, api) => { s.heartbeat = 10; s.proxyIdle = 20; s.rate = 1; s.reconnect = 'backoff'; s.upgradeOk = true; fresh(s, api); api.log('Scenario: Ping every 10 s behind a 20 s proxy.', 'ok'); } },
+        { title: 'Restart + instant reconnect', desc: '16 tabs reconnect every 0.2 s while the server restarts. Watch peak handshakes/s.',
+          run: (s, api) => { s.clients = 16; s.heartbeat = 25; s.proxyIdle = 60; s.rate = 2; s.reconnect = 'now'; s.upgradeOk = true; fresh(s, api); allOpen(s, () => 25); restartServer(s, api); } },
+        { title: 'Restart + random delay and backoff', desc: 'The same restart, but each tab waits a random 0–5 s first. Handshakes spread out.',
+          run: (s, api) => { s.clients = 16; s.heartbeat = 25; s.proxyIdle = 60; s.rate = 2; s.reconnect = 'backoff'; s.upgradeOk = true; fresh(s, api); allOpen(s, () => 25); restartServer(s, api); } },
+        { title: 'Cable pulled', desc: 'The network vanishes for 8 s. Connections still say OPEN until a Ping or a write fails. Compare with "Close all cleanly".',
+          run: (s, api) => { s.heartbeat = 5; s.proxyIdle = 60; s.rate = 4; s.reconnect = 'backoff'; s.upgradeOk = true; fresh(s, api); allOpen(s, () => 2 + Math.random() * 5); dropNetwork(s, api); } }
+      ],
+      onStart: (s, api) => { api.log('8 tabs open WebSockets through the proxy. Try the scenarios, or pull the cable.', ''); }
+    },
+
+    quiz: [
+      { q: 'A notification service runs behind nginx with default settings. Browsers send a heartbeat message every 20 s, but connections still drop after about 60 s when no notifications arrive. What fixes it?',
+        o: ['Send the client heartbeat more often', 'Have the server send Ping frames (or raise proxy_read_timeout)', 'Switch from text to binary frames', 'Raise the maximum frame size'],
+        a: 1, y: 'nginx closes the connection if the <b>proxied server</b> sends nothing for 60 s. Client traffic does not reset that timer; server Pings do.' },
+      { q: 'Right after you put nginx in front of your app, every WebSocket fails. The server logs show an ordinary GET with no Upgrade header. What is wrong?',
+        o: ['The client forgot Sec-WebSocket-Version', 'The server must reply 200 instead of 101', 'The client frames are not masked', 'nginx is not forwarding the hop-by-hop Upgrade and Connection headers'],
+        a: 3, y: 'Upgrade and Connection are hop-by-hop. nginx only passes them on if you set them with <code>proxy_set_header</code>.' },
+      { q: 'After a deploy, 50,000 clients reconnect in the same second and the server falls over again. What does RFC 6455 recommend?',
+        o: ['Wait a random time before the first retry (0–5 s suggested), then back off further', 'Retry immediately so clients miss as little as possible', 'Keep the old connection object and keep sending until it works', 'Send Close 1000 before reconnecting'],
+        a: 0, y: 'The spec says clients SHOULD delay the first reconnect by a random amount and use backoff (for example truncated binary exponential) after that.' },
+      { q: 'Your onclose handler logs code 1006. What happened?',
+        o: ['The server sent a Close frame with code 1006', 'The page navigated away normally', 'The connection ended without any Close frame, e.g. the network or a proxy cut it', 'The message was too big'],
+        a: 2, y: '1006 is never sent on the wire. It is reported locally when the connection closed without a Close frame.' },
+      { q: 'Your hand-written test client connects fine, but the server closes the connection with 1002 as soon as the client sends its first message. Most likely cause?',
+        o: ['The server should mask its frames', 'The client is not masking its frames', 'The client sent a Ping', 'The handshake used Version 13'],
+        a: 1, y: 'Clients MUST mask every frame. A server that receives an unmasked frame must close the connection and may use 1002 (protocol error).' },
+      { q: 'A server answers the upgrade request with 200 OK and all the right WebSocket headers. Is the connection open?',
+        o: ['Yes, any 2xx status works', 'Yes, if Sec-WebSocket-Accept is correct', 'Only if the client sends a Ping first', 'No, only 101 Switching Protocols completes the handshake'],
+        a: 3, y: 'Any status other than 101 means the WebSocket handshake has not completed.' },
+      { q: 'A laptop loses Wi-Fi for 30 s. The app is quiet and has no heartbeat. Why does the server still list the connection as OPEN?',
+        o: ['No Close frame was sent and nothing tried to write, so nothing has failed yet', 'The browser sent Close 1001 and the server ignored it', 'The proxy keeps the connection alive for the client', 'WebSocket connections cannot break once open'],
+        a: 0, y: 'A dead link is only noticed when a write fails or a Ping gets no Pong. Heartbeats exist to find these quickly.' }
+    ],
+
+    learn: [
+      'Can you name the headers in the opening handshake and the status that confirms it?',
+      'Can you explain why a quiet connection behind a proxy dies, and two ways to fix it?',
+      'Can you explain the difference between close code 1000 and 1006?',
+      'Can you explain why clients should wait a random time before reconnecting?'
+    ],
+
+    related: [
+      { name: 'HTTP/1.1', abbr: 'HTTP', how: 'The handshake is an HTTP GET with an Upgrade header.', color: 'var(--c-blue)' },
+      { name: 'TCP', abbr: 'TCP', how: 'Every frame travels on the one long-lived TCP connection.', color: 'var(--c-blue)' },
+      { name: 'TLS', abbr: 'TLS', how: '<code>wss://</code> runs WebSocket over TLS.', color: 'var(--c-blue)' }
+    ],
+
+    sources: [
+      { title: 'RFC 6455: The WebSocket Protocol', url: 'https://www.rfc-editor.org/rfc/rfc6455', note: 'Handshake, frames, opcodes, masking, Ping/Pong, close codes, reconnect backoff (§7.2.3)' },
+      { title: 'MDN: WebSocket API', url: 'https://developer.mozilla.org/en-US/docs/Web/API/WebSocket', note: 'Browser API: events, send(), close(), bufferedAmount; no backpressure' },
+      { title: 'nginx: WebSocket proxying', url: 'https://nginx.org/en/docs/http/websocket.html', note: 'Upgrade/Connection headers, 60 s default idle close, Pings to keep alive' }
+    ],
+
+    simplified: 'One frame per message, no TCP or TLS details; a dead network is noticed on the next write or Ping instead of after TCP timeouts; scenarios shorten the 60 s nginx timeout so you don\'t wait.'
+  });
+})();
+
+</script>
+<script>
+/* sim-lab: page shell for one topic. Header, theme toggle, tabs, sources footer. Runs last. */
+(function () {
+  'use strict';
+  const L = window.SimLab, h = L.h;
+  const app = document.getElementById('app');
+  const t = L.current;
+  if (!t) { app.textContent = 'No topic loaded. The topic file must call SimLab.topic({...}).'; return; }
+
+  /* Theme: auto (follows the system) -> light -> dark. Remembered per browser. */
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('theme');
+  const THEMES = ['auto', 'light', 'dark'];
+  let theme = 'auto';
+  try { theme = localStorage.getItem('simlab_theme') || 'auto'; } catch (e) { /* ignore */ }
+  function applyTheme() {
+    if (theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme);
+    themeBtn.textContent = { auto: '◐ Auto', light: '☀ Light', dark: '☾ Dark' }[theme];
+    themeBtn.setAttribute('aria-label', 'Colour theme: ' + theme + '. Click to change.');
+  }
+  themeBtn.addEventListener('click', () => {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+    try { localStorage.setItem('simlab_theme', theme); } catch (e) { /* ignore */ }
+    applyTheme();
+  });
+  applyTheme();
+
+  document.title = t.name + ' · how it works';
+  document.getElementById('brand-name').textContent = t.name;
+  const topProg = document.getElementById('top-prog');
+
+  const tabs = L.tabsOf(t);
+  let cur = L.store.get('tab', tabs[0].id);
+  if (!tabs.some(x => x.id === cur)) cur = tabs[0].id;
+  const tabBar = h('div', { class: 'tabs', role: 'tablist' });
+  const body = h('div', { role: 'tabpanel' });
+  let viewCleanup = null;
+  const ctx = { switchTab };
+
+  function drawProgress() {
+    const p = L.prog(t.id);
+    const done = tabs.filter(x => p[x.id]).length;
+    topProg.textContent = '';
+    topProg.append(h('span', null, done + ' of ' + tabs.length + ' done'), h('span', { class: 'bar' }, h('i', { style: { width: (100 * done / tabs.length) + '%' } })));
+  }
+  function drawTabs() {
+    tabBar.textContent = '';
+    const p = L.prog(t.id);
+    tabs.forEach(x => tabBar.append(h('button', { role: 'tab', 'aria-selected': x.id === cur ? 'true' : 'false', onclick: () => switchTab(x.id) }, h('span', { class: 'ok' + (p[x.id] ? ' d' : '') }), x.label)));
+  }
+  function switchTab(id) {
+    cur = id;
+    L.store.set('tab', id);
+    if (viewCleanup) { viewCleanup(); viewCleanup = null; }
+    body.textContent = '';
+    const tab = tabs.find(x => x.id === id);
+    const fn = tab.render || L.views[id];
+    viewCleanup = fn(body, t, ctx) || null;
+    drawTabs();
+    window.scrollTo({ top: 0 });
+  }
+  document.addEventListener('simlab:progress', () => { drawTabs(); drawProgress(); });
+
+  const sources = t.sources || [];
+  const foot = h('footer', { class: 'foot' },
+    sources.length > 0 && h('div', { class: 'sources' }, h('span', { class: 'lbl' }, 'Sources'),
+      h('ol', null, sources.map(s => h('li', null, h('a', { href: s.url || s[1], target: '_blank', rel: 'noopener' }, s.title || s[0]), (s.note || s[2]) && h('span', null, ' · ' + (s.note || s[2])))))),
+    h('div', { class: 'foot-row' },
+      h('span', null, t.simplified || 'A teaching model, simplified on purpose: timing, scale and numbers are approximate. Check the sources for exact behaviour.'),
+      h('span', null, 'Made with sim-lab · progress is saved in this browser only.')));
+
+  app.append(
+    h('div', { class: 'svc-head' },
+      h('span', { class: 'hex lg', style: { '--c': t.color || 'var(--accent)' } }, (t.abbr || t.name).slice(0, 4)),
+      h('div', { class: 't' }, h('h1', null, t.name), t.tagline && h('p', { html: t.tagline }),
+        t.chips && h('div', { class: 'chips' }, t.chips.map(c => h('span', { class: 'chip ' + (c[1] || '') }, c[0]))))),
+    tabBar, body, foot);
+  switchTab(cur);
+  drawProgress();
+})();
+
+</script>
+</html>

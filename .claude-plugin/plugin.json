@@ -1,0 +1,10 @@
+{
+  "name": "sim-lab",
+  "version": "1.0.0",
+  "description": "Ask how any technology works (WebSocket, OAuth, Docker, DNS...) and get an interactive simulation page: an animated tour, a simulator you can break, and a quiz. Researched from official sources.",
+  "author": { "name": "GOKUL K" },
+  "homepage": "https://github.com/GokulKGit/sim-lab",
+  "repository": "https://github.com/GokulKGit/sim-lab",
+  "license": "MIT",
+  "keywords": ["learning", "simulation", "interactive", "explainer", "visualization"]
+}

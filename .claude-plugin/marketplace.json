@@ -1,0 +1,14 @@
+{
+  "name": "sim-lab",
+  "owner": { "name": "GOKUL K" },
+  "metadata": {
+    "description": "Interactive simulations that show how technologies work: animated tours, simulators you can break, and quizzes."
+  },
+  "plugins": [
+    {
+      "name": "sim-lab",
+      "source": "./",
+      "description": "Interactive simulations that show how a technology works, researched from official sources."
+    }
+  ]
+}
